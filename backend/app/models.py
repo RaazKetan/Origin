@@ -60,6 +60,25 @@ class User(Base):
     top_frameworks = json_column()
     user_vector = vector_column(768)
 
+    # Profile completion and onboarding fields
+    profile_completed = Column(Boolean, default=False, index=True)
+    resume_url = Column(String)  # Path to uploaded resume file
+    awards = json_column()  # List of awards/extra activities
+    college_name = Column(String)
+    college_gpa = Column(String)
+    college_years = Column(String)  # e.g., "2020-2024"
+    certifications = json_column()  # List of certifications
+    portfolio_score = Column(Integer, default=0, index=True)  # 0-100
+    portfolio_rank = Column(String)  # "Beginner", "Intermediate", "Advanced", "Expert"
+
+    # Background analysis tracking
+    pending_repo_analysis = (
+        json_column()
+    )  # Stores analyzed skills waiting for user review
+    analysis_notification = Column(
+        Boolean, default=False, index=True
+    )  # Flag to show notification dot
+
     # Relationships
     projects = relationship(
         "Project", back_populates="owner", cascade="all, delete-orphan"
@@ -70,6 +89,15 @@ class User(Base):
     )
     received_messages = relationship(
         "ChatMessage", foreign_keys="ChatMessage.to_user_id", back_populates="recipient"
+    )
+
+    # Job System Relationships
+    jobs = relationship("Job", back_populates="employer", cascade="all, delete-orphan")
+    job_matches = relationship(
+        "JobMatch", back_populates="user", cascade="all, delete-orphan"
+    )
+    applications = relationship(
+        "Application", back_populates="applicant", cascade="all, delete-orphan"
     )
 
     if is_postgres:
@@ -256,4 +284,102 @@ class SkillGapAnalysis(Base):
     __table_args__ = (
         Index("idx_candidate_score", "candidate_id", "readiness_score"),
         Index("idx_role_score", "target_role", "readiness_score"),
+    )
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employer_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title = Column(String, nullable=False, index=True)
+    description = Column(Text)
+    requirements = Column(Text)  # Detailed requirements
+    skills = json_column()  # List of required skills
+    job_vector = vector_column(768)
+    location = Column(String)
+    salary_range = Column(String)
+    status = Column(String, default="active", index=True)  # active, closed, draft
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    employer = relationship("User", back_populates="jobs")
+    matches = relationship(
+        "JobMatch", back_populates="job", cascade="all, delete-orphan"
+    )
+    applications = relationship(
+        "Application", back_populates="job", cascade="all, delete-orphan"
+    )
+
+    if is_postgres:
+        __table_args__ = (
+            Index("idx_job_skills", "skills", postgresql_using="gin"),
+            Index("idx_job_status_created", "status", "created_at"),
+        )
+    else:
+        __table_args__ = (Index("idx_job_status_created", "status", "created_at"),)
+
+
+class JobMatch(Base):
+    __tablename__ = "job_matches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Scoring components
+    semantic_score = Column(Integer)  # scaled 0-100 or float
+    skill_overlap_score = Column(Integer)
+    real_work_score = Column(Integer)
+    readiness_score = Column(Integer)
+    final_match_score = Column(Integer, index=True)  # 0-100
+
+    # Fairness / Visibility tracking
+    times_shown = Column(Integer, default=0)
+    last_shown_at = Column(DateTime(timezone=True))
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    job = relationship("Job", back_populates="matches")
+    user = relationship("User", back_populates="job_matches")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "user_id", name="uq_job_user_match"),
+        Index("idx_match_scores", "job_id", "final_match_score"),
+        Index("idx_user_feed", "user_id", "final_match_score"),
+    )
+
+
+class Application(Base):
+    __tablename__ = "applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status = Column(
+        String, default="applied", index=True
+    )  # applied, reviewing, shortlisted, rejected, hired
+    cover_letter = Column(Text)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    job = relationship("Job", back_populates="applications")
+    applicant = relationship("User", back_populates="applications")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "user_id", name="uq_job_application"),
+        Index("idx_app_status", "job_id", "status"),
     )

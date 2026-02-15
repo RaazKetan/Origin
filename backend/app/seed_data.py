@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from .database import SessionLocal
 from . import models, auth
-from .gemini_agent import embed_text
+from app.utils import embed_text
 
 
 def seed_database():

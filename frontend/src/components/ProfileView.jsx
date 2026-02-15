@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mail, Github, Globe, MapPin, Award, BookOpen, Layers, Code, Briefcase, Plus, X, Trash2, Calendar, GitCommit, Zap, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Github, Globe, MapPin, Award, BookOpen, Layers, Code, Briefcase, Plus, X, Trash2, Calendar, GitCommit, Zap, Loader2, CheckCircle } from 'lucide-react';
 
 export const ProfileView = ({ currentUser, onBack, onEdit, isDarkMode = true }) => {
   const [repoUrl, setRepoUrl] = useState('');
@@ -9,6 +9,101 @@ export const ProfileView = ({ currentUser, onBack, onEdit, isDarkMode = true }) 
   const [user, setUser] = useState(currentUser);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
+  
+  // Pending skills overlay state
+  const [showPendingSkillsOverlay, setShowPendingSkillsOverlay] = useState(false);
+  const [pendingSkills, setPendingSkills] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState(new Set());
+  const [loadingPendingSkills, setLoadingPendingSkills] = useState(false);
+
+  // Check for pending skills on mount
+  useEffect(() => {
+    if (currentUser?.analysis_notification) {
+      fetchPendingSkills();
+    }
+  }, [currentUser]);
+
+  const fetchPendingSkills = async () => {
+    setLoadingPendingSkills(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/pending-skills`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingSkills(data.skills || []);
+        if (data.skills && data.skills.length > 0) {
+          setShowPendingSkillsOverlay(true);
+          // Pre-select all skills
+          setSelectedSkills(new Set(data.skills.map(s => s.skill)));
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching pending skills:', err);
+    } finally {
+      setLoadingPendingSkills(false);
+    }
+  };
+
+  const toggleSkillSelection = (skill) => {
+    const newSelected = new Set(selectedSkills);
+    if (newSelected.has(skill)) {
+      newSelected.delete(skill);
+    } else {
+      newSelected.add(skill);
+    }
+    setSelectedSkills(newSelected);
+  };
+
+  const handleAcceptSkills = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/accept-skills`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          accepted_skills: Array.from(selectedSkills)
+        })
+      });
+
+      if (response.ok) {
+        // Refresh user data
+        const updatedUser = { ...user, analysis_notification: false };
+        setUser(updatedUser);
+        setShowPendingSkillsOverlay(false);
+        setSuccessMessage(`Successfully added ${selectedSkills.size} skills to your profile!`);
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err) {
+      console.error('Error accepting skills:', err);
+      setError('Failed to accept skills');
+    }
+  };
+
+  const handleDismissAnalysis = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/dismiss`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const updatedUser = { ...user, analysis_notification: false };
+      setUser(updatedUser);
+      setShowPendingSkillsOverlay(false);
+    } catch (err) {
+      console.error('Error dismissing analysis:', err);
+    }
+  };
 
   const handleAnalyzeRepo = async () => {
     if (!repoUrl.trim()) {
@@ -454,6 +549,117 @@ export const ProfileView = ({ currentUser, onBack, onEdit, isDarkMode = true }) 
              <button onClick={handleConfirmAddRepo} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
                 Confirm & Add
              </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Pending Skills Overlay */}
+    {showPendingSkillsOverlay && pendingSkills.length > 0 && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className={`rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border ${
+          isDarkMode ? 'bg-[#18181b] border-white/10' : 'bg-white border-gray-200'
+        }`}>
+          {/* Header */}
+          <div className={`px-8 py-6 flex items-center justify-between border-b ${isDarkMode ? 'border-white/5' : 'border-gray-100'}`}>
+            <div>
+              <h3 className={`text-2xl font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                <CheckCircle className="w-6 h-6 text-green-500" />
+                Repository Analysis Complete!
+              </h3>
+              <p className={`text-sm mt-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
+                We found {pendingSkills.length} skills from your repositories. Select which ones to add to your profile.
+              </p>
+            </div>
+            <button 
+              onClick={handleDismissAnalysis} 
+              className={`p-2 rounded-full hover:bg-white/10 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Skills by Repository */}
+          <div className="p-8 space-y-6">
+            {/* Group skills by repository */}
+            {(() => {
+              const skillsByRepo = {};
+              pendingSkills.forEach(({ skill, repo_name, repo_url }) => {
+                if (!skillsByRepo[repo_name]) {
+                  skillsByRepo[repo_name] = { url: repo_url, skills: [] };
+                }
+                skillsByRepo[repo_name].skills.push(skill);
+              });
+
+              return Object.entries(skillsByRepo).map(([repoName, { url, skills }]) => (
+                <div key={repoName} className={`p-4 rounded-xl border ${
+                  isDarkMode ? 'bg-zinc-900/50 border-white/5' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Github className={`w-4 h-4 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`} />
+                    <a 
+                      href={url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className={`text-sm font-medium hover:underline ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}
+                    >
+                      {repoName}
+                    </a>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {skills.map((skill) => (
+                      <button
+                        key={skill}
+                        onClick={() => toggleSkillSelection(skill)}
+                        className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                          selectedSkills.has(skill)
+                            ? isDarkMode
+                              ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                              : 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                            : isDarkMode
+                              ? 'bg-zinc-800/50 border-white/10 text-zinc-500'
+                              : 'bg-gray-100 border-gray-300 text-gray-500'
+                        }`}
+                      >
+                        <span className="text-sm font-medium">{skill}</span>
+                        {selectedSkills.has(skill) ? (
+                          <CheckCircle className="w-4 h-4" />
+                        ) : (
+                          <div className="w-4 h-4 rounded-full border-2 border-current" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+
+          {/* Footer Actions */}
+          <div className={`px-8 py-6 border-t flex items-center justify-between ${
+            isDarkMode ? 'border-white/5 bg-zinc-900/50' : 'border-gray-100 bg-gray-50'
+          }`}>
+            <div className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
+              {selectedSkills.size} of {pendingSkills.length} skills selected
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={handleDismissAnalysis} 
+                className={`px-6 py-2 rounded-xl font-medium ${
+                  isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Dismiss
+              </button>
+              <button 
+                onClick={handleAcceptSkills}
+                disabled={selectedSkills.size === 0}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add {selectedSkills.size} Skill{selectedSkills.size !== 1 ? 's' : ''} to Profile
+              </button>
+            </div>
           </div>
         </div>
       </div>

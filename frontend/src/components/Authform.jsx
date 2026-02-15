@@ -9,8 +9,6 @@ export const AuthForm = ({ view, setView, onLogin, onRegister }) => {
     name: "",
     email: "",
     password: "",
-    skills: "",
-    bio: "",
   });
 
   const handleLogin = async (e) => {
@@ -31,7 +29,7 @@ export const AuthForm = ({ view, setView, onLogin, onRegister }) => {
             Skill Link
           </h1>
           <p className="text-xl text-[#8B8C89]">
-            Connect with developers and discover amazing projects
+            Connect with developers and discover amazing opportunities
           </p>
         </div>
 
@@ -136,24 +134,6 @@ export const AuthForm = ({ view, setView, onLogin, onRegister }) => {
                 }
                 className="w-full px-4 py-3 bg-[#F9FBFC] border border-[#A3CEF1] rounded-xl text-[#274C77] placeholder-[#8B8C89] focus:outline-none focus:ring-2 focus:ring-[#6096BA]"
                 required
-              />
-              <input
-                type="text"
-                placeholder="Skills (comma separated)"
-                value={registerData.skills}
-                onChange={(e) =>
-                  setRegisterData({ ...registerData, skills: e.target.value })
-                }
-                className="w-full px-4 py-3 bg-[#F9FBFC] border border-[#A3CEF1] rounded-xl text-[#274C77] placeholder-[#8B8C89] focus:outline-none focus:ring-2 focus:ring-[#6096BA]"
-                required
-              />
-              <textarea
-                placeholder="Bio"
-                value={registerData.bio}
-                onChange={(e) =>
-                  setRegisterData({ ...registerData, bio: e.target.value })
-                }
-                className="w-full px-4 py-3 bg-[#F9FBFC] border border-[#A3CEF1] rounded-xl text-[#274C77] placeholder-[#8B8C89] focus:outline-none focus:ring-2 focus:ring-[#6096BA] h-20 resize-none"
               />
               <button
                 type="submit"

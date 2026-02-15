@@ -3,63 +3,35 @@ import { Sun, Moon } from 'lucide-react';
 import { AuthForm } from './components/Authform';
 import { Header } from './components/Header';
 import { SideNav, BottomNav } from './components/Navigation';
-import { ProjectCard } from './components/ProjectCard';
-import { MatchCard } from './components/MatchCard';
 import { ChatView } from './components/ChatView';
-import { ProjectDetails } from './components/ProjectDetails';
 import { UserDetails } from './components/UserDetails';
-import { PostProject } from './components/PostProject';
 import { ProfileView } from './components/ProfileView';
 import { RequirementsPage } from './components/RequirementsPage';
-import { MyProjects } from './components/MyProjects';
 import { ProfileEdit } from './components/ProfileEdit';
-import { ProjectLikes } from './components/ProjectLikes';
 import { LandingPage } from './components/LandingPage';
 import { TalentSearch } from './components/TalentSearch';
 import { Discover } from './components/Discover';
+import { ProfileSetup } from './components/ProfileSetup';
+import { Jobs } from './components/Jobs';
+import { ApplicationsTracker } from './components/ApplicationsTracker';
 const API_BASE = "http://localhost:8000";
 
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentProject, setCurrentProject] = useState(null);
-  const [matches, setMatches] = useState([]);
   const [view, setView] = useState("login");
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [inspectedProject, setInspectedProject] = useState(null);
   const [inspectedUser, setInspectedUser] = useState(null);
   const [ownerUser, setOwnerUser] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
-  const [postProject, setPostProject] = useState({
-    title: "",
-    summary: "",
-    repo_url: "",
-    languages: "",
-    frameworks: "",
-    project_type: "",
-    domains: "",
-    skills: "",
-    complexity: "intermediate",
-    roles: ""
-  });
-  const [myProjects, setMyProjects] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [isShowingReshown, setIsShowingReshown] = useState(false);
-  const [matchOwners, setMatchOwners] = useState({});
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [messageNotifications, setMessageNotifications] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [isDiscoverLoading, setIsDiscoverLoading] = useState(false);
-  const [discoverProjects, setDiscoverProjects] = useState([]);
+  const [connections, setConnections] = useState([]);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true;
   });
-  const isLoadingRef = useRef(false);
   const isLoadingNotificationsRef = useRef(false);
 
   // Apply theme to document
@@ -73,73 +45,18 @@ export function App() {
   };
 
 
-  const fetchNextProject = useCallback(async (excludeId = null) => {
+  const fetchConnections = useCallback(async () => {
     const token = localStorage.getItem("token");
-    if (!token || isLoadingRef.current) return; // Prevent multiple simultaneous calls
-    
-    isLoadingRef.current = true;
-    setIsDiscoverLoading(true);
-    
+    if (!token) return;
     try {
-      let url = `${API_BASE}/matching/discover`;
-      if (excludeId) {
-        url += `?exclude_project_id=${excludeId}`;
-      }
-      
-      const res = await fetch(url, {
+      const res = await fetch(`${API_BASE}/jobs/my-connections`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        ('fetchNextProject: Setting new project:', data);
-        
-        // Loop protection: If backend still returns the same project, force null
-        if (excludeId && data.id === excludeId) {
-           console.warn("Backend returned excluded project ID. Breaking loop.");
-           setCurrentProject(null);
-           setIsShowingReshown(false);
-        } else {
-           setCurrentProject(data);
-           setIsShowingReshown(data.is_reshow || false);
-           try {
-             if (data && typeof data.owner_id === "number") {
-               const u = await fetch(`${API_BASE}/users/${data.owner_id}`);
-               if (u.ok) setOwnerUser(await u.json()); else setOwnerUser(null);
-             } else {
-               setOwnerUser(null);
-             }
-           } catch (error) { 
-             console.error("Error fetching owner user:", error);
-             setOwnerUser(null); 
-           }
-        }
-      } else if (res.status === 404) {
-        setCurrentProject(null);
-        setIsShowingReshown(false);
-      } else {
-        console.error("discover error:", await res.text());
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      isLoadingRef.current = false;
-      setIsDiscoverLoading(false);
-    }
-  }, []); // No dependencies - use ref for loading state
-
-
-  const fetchMyProjects = useCallback(async () => {
-    if (!currentUser) return;
-    try {
-      const r = await fetch(`${API_BASE}/projects/`);
-      if (r.ok) {
-        const all = await r.json();
-        setMyProjects((all || []).filter(p => p.owner_id === currentUser.id));
-      }
+      if (res.ok) setConnections(await res.json());
     } catch (error) {
-      console.error("Error fetching my projects:", error);
+      console.error("Error fetching connections:", error);
     }
-  }, [currentUser]);
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     if (!currentUser || isLoadingNotificationsRef.current) return; // Prevent multiple simultaneous calls
@@ -161,6 +78,26 @@ export function App() {
     }
   }, [currentUser]); // Only depend on currentUser
 
+  const checkProfileCompletion = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+    
+    try {
+      const res = await fetch(`${API_BASE}/profile-setup/check-completion`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        return data.profile_completed;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking profile completion:', error);
+      return false;
+    }
+  };
+
   const handleLogin = async (email, password) => {
     setIsLoading(true);
     try {
@@ -174,7 +111,14 @@ export function App() {
         const data = await response.json();
         localStorage.setItem("token", data.access_token);
         await fetchCurrentUser();
-        setView("discover");
+        
+        // Check if profile is completed
+        const isComplete = await checkProfileCompletion();
+        if (isComplete) {
+          setView("discover");
+        } else {
+          setView("profileSetup");
+        }
       } else {
         alert("Login failed");
       }
@@ -199,15 +143,15 @@ export function App() {
           username,
           name, 
           email, 
-          password,
-          skills: [] // Default empty skills, user can update later
+          password
         })
       });
   
       if (res.ok) {
-        alert("Registration successful! Welcome to Skill Link!");
+        alert("Registration successful! Let's set up your profile.");
         // Auto-login after successful registration
         await handleLogin(email, password);
+        // Will redirect to profile setup in checkProfileCompletion
       } else {
         const msg = await res.text();
         console.error("register error:", msg);
@@ -356,17 +300,6 @@ export function App() {
     }
   };
 
-  const viewProject = async (projectId) => {
-    try {
-      const r = await fetch(`${API_BASE}/projects/${projectId}`);
-      if (r.ok) {
-        const p = await r.json();
-        setInspectedProject(p);
-        setView("projectDetails");
-      }
-    } catch (err) { console.error(err); }
-  };
-
   const viewOwner = async (ownerId) => {
     try {
       const r = await fetch(`${API_BASE}/users/${ownerId}`);
@@ -400,14 +333,17 @@ export function App() {
     (async () => {
       const ok = await fetchCurrentUser();
       if (ok) {
-        setView("discover");
-        fetchNextProject();
-        // fetchNotifications will be called by the other useEffect when currentUser is set
+        const isComplete = await checkProfileCompletion();
+        if (isComplete) {
+          setView("discover");
+        } else {
+          setView("profileSetup");
+        }
       } else {
         setView("login");
       }
     })();
-  }, [fetchNextProject]); // Include fetchNextProject since it's now stable
+  }, []);
 
   // Refresh notifications periodically
   useEffect(() => {
@@ -417,138 +353,24 @@ export function App() {
     fetchNotifications();
     
     // Then set up the interval for periodic updates
-    const interval = setInterval(fetchNotifications, 10000); // Every 10 seconds
+    // Optimize: Poll every 30s instead of 10s, and only if tab is visible
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchNotifications();
+      }
+    }, 30000); 
+    
     return () => clearInterval(interval);
   }, [currentUser, fetchNotifications]);
 
-  const fetchMatches = useCallback(async () => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
 
-    try {
-      const response = await fetch(`${API_BASE}/matching/matches`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const matchesData = await response.json();
-        setMatches(matchesData);
-        
-        // Fetch liker user data for each match (the person who matched)
-        const likerPromises = matchesData.map(async (match) => {
-          try {
-            const likerResponse = await fetch(`${API_BASE}/users/${match.liker_user_id}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (likerResponse.ok) {
-              const likerData = await likerResponse.json();
-              return { projectId: match.id, liker: likerData };
-            }
-          } catch (error) {
-            console.error(`Error fetching liker for project ${match.id}:`, error);
-          }
-          return { projectId: match.id, liker: null };
-        });
-        
-        const likerData = await Promise.all(likerPromises);
-        const likerMap = {};
-        likerData.forEach(({ projectId, liker }) => {
-          likerMap[projectId] = liker;
-        });
-        setMatchOwners(likerMap); // Keep same state name for now to avoid breaking other code
-      }
-    } catch (error) {
-      console.error("Error fetching matches:", error);
-    }
-  }, []); // No dependencies since it only uses token from localStorage
 
-  const fetchProjectLikes = useCallback(async () => {
-    // This function is called when navigating to project likes view
-    // The ProjectLikes component will handle its own data fetching
-  }, []); // No dependencies since it only uses token from localStorage
 
-  const handleSwipe = async (isLike, projectId = null) => {
-    const targetId = projectId || (currentProject && currentProject.id);
-    
-    if (!targetId) {
-      ("No current project to swipe on");
-      return;
-    }
-    
-    if (isSwiping) {
-      ("Already swiping, please wait...");
-      return;
-    }
-    
-    (`Swiping ${isLike ? 'like' : 'pass'} on project ${targetId}`);
-    setIsSwiping(true);
-    
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("No authentication token found");
-      alert("Please log in to swipe on projects");
-      setIsSwiping(false);
-      return;
-    }
-    
-    try {
-      const res = await fetch(`${API_BASE}/matching/swipe`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          project_id: Number(targetId),
-          is_like: Boolean(isLike),
-        }),
-      });
-      
-      (`Swipe response status: ${res.status}`);
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        ("Swipe error response:", errorData);
-        
-        if (errorData.detail === "Already swiped on this project") {
-          // If already swiped, just move to next project
-          ("Project already swiped, moving to next...");
-          // Pass excludeId to force backend to give us a different project
-          await fetchNextProject(targetId);
-          return;
-        }
-        console.error("swipe error:", errorData);
-        alert(`Swipe failed: ${errorData.detail || 'Unknown error'}`);
-        return;
-      }
-      
-      const swipeResult = await res.json();
-      ("Swipe successful:", swipeResult);
-      
-      // Show success message
-      if (isLike) {
-        ("✅ Project liked successfully!");
-      } else {
-        ("❌ Project passed successfully!");
-      }
-      
-      // Move to next project after successful swipe
-      ("Moving to next project after successful swipe...");
-      // Pass excludeId to prevent Reshow of the same project
-      await fetchNextProject(targetId);
-      ("Next project fetched, current project:", currentProject);
-    } catch (error) {
-      console.error("Swipe request failed:", error);
-      alert("Failed to swipe. Please check your connection and try again.");
-    } finally {
-      setIsSwiping(false);
-    }
-  };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     setCurrentUser(null);
-    setCurrentProject(null);
-    setMatches([]);
+    setConnections([]);
     setView("login");
   };
 
@@ -604,39 +426,7 @@ export function App() {
   };
 
 
-  const handlePostProject = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    const toList = (s) => s.split(",").map(x=>x.trim()).filter(Boolean);
-    const payload = {
-      title: (postProject.title||"").trim(),
-      summary: (postProject.summary||"").trim(),
-      repo_url: (postProject.repo_url||"").trim() || null,
-      languages: toList(postProject.languages||""),
-      frameworks: toList(postProject.frameworks||""),
-      project_type: (postProject.project_type||"Web Application").trim(),
-      domains: toList(postProject.domains||""),
-      skills: toList(postProject.skills||""),
-      complexity: (postProject.complexity||"intermediate").trim(),
-      roles: toList(postProject.roles||"")
-    };
-    try {
-      const res = await fetch(`${API_BASE}/projects/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        setPostProject({ title:"", summary:"", repo_url:"", languages:"", frameworks:"", project_type:"", domains:"", skills:"", complexity:"intermediate", roles:"" });
-        await fetchMyProjects();
-        alert("Project posted! It will appear in Discover for others.");
-      } else {
-        console.error("post project error:", await res.text());
-        alert("Failed to post project. Check console.");
-      }
-    } catch (e2) { console.error(e2); }
-  };
+
 
   if (!currentUser) {
     return (
@@ -648,25 +438,27 @@ export function App() {
     );
   }
 
+  // Show profile setup if not completed
+  if (view === "profileSetup") {
+    return (
+      <ProfileSetup 
+        onComplete={async () => {
+          await fetchCurrentUser();
+          setView("discover");
+        }}
+        isDarkMode={isDarkMode}
+      />
+    );
+  }
+
   return (
     <div className={`min-h-screen font-sans flex ${isDarkMode ? 'bg-[#0a0a0a] text-slate-50' : 'bg-gray-50 text-gray-900'}`}>
       <SideNav 
         currentView={view} 
         setView={(newView) => {
           setView(newView);
-          // Handle view-specific logic
-          if (newView === 'discover') {
-            setIsDiscoverLoading(true);
-            setTimeout(() => {
-              fetchNextProject();
-              setIsDiscoverLoading(false);
-            }, 2000);
-          } else if (newView === 'matches') {
-            fetchMatches();
-          } else if (newView === 'postProject' || newView === 'myProjects') {
-            fetchMyProjects();
-          } else if (newView === 'projectLikes') {
-            fetchProjectLikes();
+          if (newView === 'connections') {
+            fetchConnections();
           }
         }}
         currentUser={currentUser}
@@ -704,76 +496,61 @@ export function App() {
 
         <div className="pb-24 md:pb-0 p-6 flex justify-center">
         {view === "discover" && (
-          <Discover 
-            key={currentProject?.id || 'no-project'}
-            projects={currentProject ? [currentProject] : []}
-            onConnect={(project) => handleSwipe(true, project.id)}
-            onLike={(project) => handleSwipe(true, project.id)}
-            onSkip={(project) => handleSwipe(false, project.id)}
-            isDarkMode={isDarkMode}
-            isLoading={isDiscoverLoading}
-          />
+          <Discover isDarkMode={isDarkMode} />
         )}
 
-        {view === "matches" && (
-          <div className="w-full max-w-6xl">
-            <h2 className={`text-3xl font-bold text-center mb-8 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              Your Matches
-            </h2>
-            {matches.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {(() => {
-                  // Group matches by liker_user_id
-                  const groupedMatches = matches.reduce((acc, match) => {
-                    const key = match.liker_user_id;
-                    if (!acc[key]) {
-                      acc[key] = {
-                        likerUserId: key,
-                        projects: []
-                      };
-                    }
-                    acc[key].projects.push(match);
-                    return acc;
-                  }, {});
+        {view === "jobs" && (
+          <Jobs isDarkMode={isDarkMode} />
+        )}
 
-                  // Convert to array and render
-                  return Object.values(groupedMatches).map((group) => {
-                    // Calculate total notifications for all projects from this user
-                    const totalNotifications = group.projects.reduce((sum, project) => {
-                      const notification = notifications.find(n => n.project_id === project.id);
-                      const messageNotification = messageNotifications[project.id] || 0;
-                      return sum + (notification?.message_count || 0) + messageNotification;
-                    }, 0);
-                    
-                    return (
-                      <MatchCard 
-                        key={group.likerUserId}
-                        projects={group.projects}
-                        onChat={openChat}
-                        onViewProject={viewProject}
-                        onViewOwner={viewOwner}
-                        notificationCount={totalNotifications}
-                        likerUser={matchOwners[group.projects[0].id]}
-                        isDarkMode={isDarkMode}
-                      />
-                    );
-                  });
-                })()}
+        {view === "connections" && (
+          <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold tracking-tight mb-2">
+                <span className="bg-gradient-to-r from-green-500 to-teal-500 bg-clip-text text-transparent">Your</span> Connections
+              </h1>
+              <p className={`text-base ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+                Recruiters and employers who responded to your applications.
+              </p>
+            </div>
+            {connections.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {connections.map(conn => (
+                  <div key={conn.id} className="bg-white dark:bg-[#1a1a1c] rounded-2xl border border-gray-100 dark:border-white/5 p-5 hover:shadow-md transition-all">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-green-500 to-teal-500 flex items-center justify-center text-white font-bold text-sm">
+                        {(conn.employer_name || 'C')[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-900 dark:text-white">{conn.employer_name || 'Recruiter'}</h3>
+                        <p className="text-xs text-gray-500 dark:text-zinc-500">{conn.employer_org_name || 'Company'}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-700 dark:text-zinc-300 mb-2">Applied to: <span className="font-semibold">{conn.job_title}</span></p>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                      conn.status === 'accepted' ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300'
+                        : conn.status === 'interview' ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300'
+                        : conn.status === 'reviewed' ? 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300'
+                        : 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300'
+                    }`}>
+                      {conn.status.charAt(0).toUpperCase() + conn.status.slice(1)}
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className={`text-center py-12 ${isDarkMode ? 'text-zinc-400' : 'text-gray-700'}`}>
-                <p className="text-xl">
-                  No matches yet.
-                </p>
-                <p className={`text-sm mt-2 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>
-                  Like projects and wait for project owners to approve your likes to start chatting!
-                </p>
-                <p className={`text-sm mt-1 ${isDarkMode ? 'text-zinc-600' : 'text-gray-400'}`}>
-                  Once approved, you'll be able to chat about the project here.
+              <div className={`text-center py-16 bg-white dark:bg-[#1a1a1c] rounded-3xl border border-gray-100 dark:border-white/5`}>
+                <p className="text-xl font-bold text-gray-900 dark:text-white mb-2">No connections yet</p>
+                <p className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+                  When recruiters respond to your applications, they'll appear here.
                 </p>
               </div>
             )}
           </div>
+        )}
+
+        {view === "applications" && (
+          <ApplicationsTracker isDarkMode={isDarkMode} />
         )}
 
         {view === "chat" && selectedProject && (
@@ -783,35 +560,16 @@ export function App() {
             chatInput={chatInput}
             setChatInput={setChatInput}
             onSend={sendChat}
-            onBack={() => setView("matches")}
+            onBack={() => setView("connections")}
             currentUser={currentUser}
             otherPerson={ownerUser}
-          />
-        )}
-
-        {view === "projectDetails" && inspectedProject && (
-          <ProjectDetails 
-            project={inspectedProject}
-            onBack={() => setView("matches")}
-            ownerUser={ownerUser}
           />
         )}
 
         {view === "userDetails" && inspectedUser && (
           <UserDetails 
             user={inspectedUser}
-            onBack={() => setView("matches")}
-            isDarkMode={isDarkMode}
-          />
-        )}
-
-        {view === "postProject" && (
-          <PostProject 
-            postProject={postProject}
-            setPostProject={setPostProject}
-            myProjects={myProjects}
-            onSubmit={handlePostProject}
-            onBack={() => setView("discover")}
+            onBack={() => setView("connections")}
             isDarkMode={isDarkMode}
           />
         )}
@@ -833,32 +591,6 @@ export function App() {
               setView("profile");
             }}
             onBack={() => setView("profile")}
-            isDarkMode={isDarkMode}
-          />
-        )}
-
-        {view === "myProjects" && (
-          <MyProjects 
-            projects={myProjects}
-            onRefresh={fetchMyProjects}
-            onEdit={(project) => {
-              setInspectedProject(project);
-              setView("projectEdit");
-            }}
-            onDelete={fetchMyProjects}
-            isDarkMode={isDarkMode}
-          />
-        )}
-
-        {view === "projectLikes" && (
-          <ProjectLikes 
-            onBack={() => setView("discover")}
-            onViewProfile={(userId) => {
-              viewOwner(userId);
-            }}
-            onApproval={() => {
-              fetchMatches(); // Refresh matches when approval happens
-            }}
             isDarkMode={isDarkMode}
           />
         )}
@@ -893,7 +625,7 @@ export function App() {
         </div>
       </main>
       
-      <BottomNav currentView={view} setView={setView} />
+      <BottomNav currentView={view} setView={setView} currentUser={currentUser} />
     </div>
   );
 }

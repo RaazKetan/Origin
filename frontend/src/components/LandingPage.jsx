@@ -518,7 +518,7 @@ ${codeSnippet}`;
               </h2>
               <p className={isDarkMode ? 'text-zinc-400' : 'text-gray-600'}>
                 {isLoginMode 
-                  ? 'Sign in to discover amazing projects' 
+                  ? 'Sign in to discover amazing opportunities' 
                   : 'Start collaborating on incredible projects'
                 }
               </p>
