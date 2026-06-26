@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class UserProfileUpdate(BaseModel):
+    username: Optional[str] = None
     name: Optional[str] = None
     bio: Optional[str] = None
     skills: Optional[List[str]] = None
@@ -21,8 +22,31 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    # Accepts either a username or an email — whichever the user typed.
+    # Kept as plain str (not EmailStr) so usernames don't trip validation.
+    # `email` is also accepted for backwards compatibility with older clients.
+    username: Optional[str] = None
+    email: Optional[str] = None
     password: str
+
+    @property
+    def identifier(self) -> str:
+        return (self.username or self.email or "").strip()
+
+
+class ForgotPasswordRequest(BaseModel):
+    # Same forgiving shape as login — username OR email.
+    username: Optional[str] = None
+    email: Optional[str] = None
+
+    @property
+    def identifier(self) -> str:
+        return (self.username or self.email or "").strip()
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 
 
 class UserResponse(BaseModel):
@@ -46,6 +70,8 @@ class UserResponse(BaseModel):
     portfolio_score: Optional[int] = None
     portfolio_rank: Optional[str] = None
     analysis_notification: Optional[bool] = False
+    contribution_grid: Optional[List[int]] = None
+    contributions_total: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -229,7 +255,7 @@ class CheckUsernameRequest(BaseModel):
 
 
 class ResumeParseResponse(BaseModel):
-    github_repos: List[str] = []
+    github_profile_url: Optional[str] = None
     awards: List[str] = []
     skills: List[str] = []
     college_name: Optional[str] = None
@@ -243,7 +269,10 @@ class ProfileSetupRequest(BaseModel):
     # For resume upload path
     resume_data: Optional[dict] = None
     # Common fields (can be from resume or manual)
-    github_repos: List[str]  # 1-5 repos required
+    github_profile_url: Optional[str] = None
+    # New: explicit repo URLs the user picked from the Connect-GitHub flow.
+    # When provided, backend uses these instead of auto-picking top 5.
+    selected_repos: Optional[List[str]] = None
     awards: Optional[List[str]] = []
     skills: Optional[List[str]] = []
     college_name: Optional[str] = None

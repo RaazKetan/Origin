@@ -1,6 +1,147 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ============================================================
+   ORIGIN DESIGN TOKENS — exposed as Tailwind utilities via @theme.
+   Use as: bg-origin-bg, text-origin-ink, border-origin-line,
+           font-display, font-mono, etc.
+   ============================================================ */
+@theme {
+  --color-origin-bg:        oklch(0.155 0.005 250);
+  --color-origin-bg-soft:   oklch(0.185 0.006 250);
+  --color-origin-surface:   oklch(0.205 0.007 250);
+  --color-origin-surface-2: oklch(0.235 0.008 250);
+  --color-origin-line:      oklch(1 0 0 / 0.085);
+  --color-origin-line-2:    oklch(1 0 0 / 0.16);
+
+  --color-origin-ink:    oklch(0.975 0.003 250);
+  --color-origin-ink-2:  oklch(0.78 0.008 250);
+  --color-origin-ink-3:  oklch(0.6 0.01 250);
+  --color-origin-ink-4:  oklch(0.48 0.01 250);
+
+  --color-origin-acc:     oklch(0.86 0.19 142);
+  --color-origin-acc-2:   oklch(0.72 0.16 144);
+  --color-origin-acc-dim: oklch(0.5 0.11 145);
+  --color-origin-acc-ink: oklch(0.2 0.04 150);
+
+  --color-origin-danger:  oklch(0.72 0.16 25);
+
+  --font-display: "Google Sans Medium", "Product Sans Medium", "Google Sans", "Product Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Light-mode overrides — applied when <html> has no `.dark` class.
+   ponytail: just flip the surface + ink scales; the green accent works in both modes. */
+:where(html:not(.dark)) {
+  --color-origin-bg:        oklch(0.99 0.002 250);
+  --color-origin-bg-soft:   oklch(0.97 0.003 250);
+  --color-origin-surface:   oklch(0.945 0.004 250);
+  --color-origin-surface-2: oklch(0.915 0.005 250);
+  --color-origin-line:      oklch(0 0 0 / 0.08);
+  --color-origin-line-2:    oklch(0 0 0 / 0.16);
+
+  --color-origin-ink:    oklch(0.18 0.01 250);
+  --color-origin-ink-2:  oklch(0.34 0.012 250);
+  --color-origin-ink-3:  oklch(0.5 0.012 250);
+  --color-origin-ink-4:  oklch(0.62 0.01 250);
+
+  --color-origin-acc:     oklch(0.62 0.18 144);
+  --color-origin-acc-2:   oklch(0.55 0.16 144);
+  --color-origin-acc-dim: oklch(0.78 0.13 145);
+  --color-origin-acc-ink: oklch(0.98 0.02 150);
+}
+
+/* View Transitions snapshot for the Magic UI theme toggler. */
+html[data-magicui-theme-vt="active"]::view-transition-old(root) { animation: none; }
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  animation: none;
+  clip-path: var(--magicui-theme-vt-clip-from);
+}
+
+/* ============================================================
+   ORIGIN BESPOKE UTILITIES — patterns that don't fit Tailwind cleanly
+   (conic gradients with @property, mask images, named keyframes).
+   ============================================================ */
+@property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+@property --p   { syntax: '<number>'; initial-value: 0; inherits: false; }
+
+@keyframes origin-spin { to { transform: rotate(360deg); } }
+@keyframes origin-pulse-dot {
+  0%, 100% { box-shadow: 0 0 6px var(--color-origin-acc); }
+  50%      { box-shadow: 0 0 16px var(--color-origin-acc); }
+}
+@keyframes origin-ripple {
+  0%   { transform: scale(.62); opacity: .6; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+@keyframes origin-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes origin-beam-spin { to { --ang: 360deg; } }
+
+/* Faint engineering grid backdrop — applied as a ::before on the page wrapper */
+.origin-grid {
+  position: relative;
+}
+.origin-grid::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--color-origin-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-origin-line) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, #000 0%, transparent 60%);
+          mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, #000 0%, transparent 60%);
+  opacity: .3;
+}
+
+/* Score ring — conic gradient driven by `style={{ '--p': N }}` */
+.origin-score-ring {
+  background: conic-gradient(var(--color-origin-acc) calc(var(--p, 0) * 1%), var(--color-origin-surface-2) 0);
+  transition: --p 1.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.origin-score-ring::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--color-origin-bg-soft);
+}
+
+/* Border beam — rotating conic stroke around a card */
+.origin-beam {
+  position: relative;
+}
+.origin-beam::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--ang, 0deg), transparent 0deg, transparent 300deg, var(--color-origin-acc) 340deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: origin-beam-spin 6s linear infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Orb ripple ring (used inside the analyzing-step orb) */
+.origin-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-origin-acc);
+  opacity: 0;
+  animation: origin-ripple 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.origin-ripple-delay { animation-delay: 1.1s; }
+
 /* Custom utility classes */
 .glass-panel {
   background-color: rgba(255, 255, 255, 0.05);

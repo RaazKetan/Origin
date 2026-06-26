@@ -1,0 +1,26 @@
+# Cloud Build source upload filter. Mirrors .dockerignore but is
+# applied at upload time so secrets never leave the workstation.
+.gcloudignore
+.dockerignore
+.git/
+.gitignore
+
+# Local secrets — explicitly DO NOT upload the dev .env (it contains
+# VITE_GEMINI_API_KEY etc). deploy.sh writes .env.production in-place
+# right before submitting, and it is *not* excluded so Vite can read it.
+.env
+.env.local
+.env.*.local
+!.env.production
+!env.example
+
+node_modules/
+dist/
+build/
+
+.vscode/
+.idea/
+.DS_Store
+
+*.md
+!README.md

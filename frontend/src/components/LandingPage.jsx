@@ -1,35 +1,16 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { 
-  GitCommit, Menu, X, Github, ArrowRight, 
-  Brain, GitGraph, Target, Zap, 
-  Terminal, Play, Loader2, CheckCircle2, AlertCircle, BookOpen,
-  Moon, Sun, Sparkles, Code2
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import './LandingPage.css';
 
-export const LandingPage = ({ onLogin, onRegister, isLoading }) => {
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved ? saved === 'dark' : true;
-  });
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  });
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-  // Demo state
-  const SAMPLE_CODE = `commit 8f3a12b
+const SAMPLE_CODE = `commit 8f3a12b
 Author: DevUser <dev@origin.ai>
 Date:   Wed Oct 25 14:30:00 2023 +0000
 
     refactor: implement recursive fiber tree traversal
-    
-    Replaced the iterative stack approach with a recursive 
-    solution to handle deeply nested component trees more 
+
+    Replaced the iterative stack approach with a recursive
+    solution to handle deeply nested component trees more
     gracefully. Added memoization to prevent re-rendering.
 
 diff --git a/src/reconciler.ts b/src/reconciler.ts
@@ -45,631 +26,572 @@ index 4a12c..9b33d 100644
 -    if (node.sibling) stack.push(node.sibling);
 -  }
 +  if (!root) return;
-+  
++
 +  // Memoize the process to avoid heavy recalc
 +  const processed = useMemo(() => process(root), [root.props]);
-+  
++
 +  if (root.child) traverse(root.child);
 +  if (root.sibling) traverse(root.sibling);
  }
 `;
 
-  const [code, setCode] = useState(SAMPLE_CODE);
-  const [stage, setStage] = useState('IDLE');
-  const [analysis, setAnalysis] = useState(null);
-  const [error, setError] = useState(null);
+const STAGE_LABELS = {
+  IDLE: 'READY',
+  READING_COMMITS: 'READING COMMITS',
+  ANALYZING_PATTERNS: 'ANALYZING PATTERNS',
+  GENERATING_PATH: 'GENERATING PATH',
+  COMPLETE: 'COMPLETE',
+};
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (isLoginMode) {
-      onLogin(formData.email, formData.password);
-    } else {
-      if (formData.password !== formData.confirmPassword) {
-        alert("Passwords don't match!");
-        return;
-      }
-      onRegister(formData.name, formData.email, formData.password);
+// 53 weeks × 7 days, deterministic so it looks alive but stable across reloads.
+function useContributionGrid() {
+  return useMemo(() => {
+    const STEPS = ['var(--g0)', 'var(--g1)', 'var(--g2)', 'var(--g3)', 'var(--g4)'];
+    let seed = 1337;
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const cells = 53 * 7;
+    const out = new Array(cells);
+    for (let i = 0; i < cells; i++) {
+      const r = rnd();
+      let lvl = r < 0.34 ? 0 : r < 0.58 ? 1 : r < 0.78 ? 2 : r < 0.92 ? 3 : 4;
+      const wk = Math.floor(i / 7);
+      if (wk >= 14 && wk <= 18 && r < 0.7) lvl = Math.max(0, lvl - 2);
+      out[i] = STEPS[lvl];
     }
-  };
-
-  const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-  };
-
-  const toggleTheme = () => {
-    setIsDarkMode(prev => {
-      const newTheme = !prev;
-      localStorage.setItem('theme', newTheme ? 'dark' : 'light');
-      return newTheme;
-    });
-  };
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-  }, [isDarkMode]);
-
-  const scrollToAuth = () => {
-    document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const analyzeCommit = async (codeSnippet) => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyACJX5GdXHk9dadwocf32zrTdRSpJ-iNsA';
-    
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      systemInstruction: `You are Origin, an advanced AI agent for the tech recruitment sector. 
-Your goal is to analyze code commits and diffs to extract the developer's true latent skills.
-You don't just look for keywords; you look for problem-solving patterns, architectural decisions, and code quality.
-You also identify gaps in their knowledge based on the code provided and suggest specific, real-world courses or topics to study.`,
-    });
-
-    const prompt = `Analyze the following git commit diff/code snippet. 
-Extract the technical skills demonstrated, soft skills (like attention to detail, clarity), 
-areas where the code could be improved, and suggest courses to bridge those gaps.
-
-Return a JSON object with this structure:
-{
-  "technicalSkills": ["skill1", "skill2"],
-  "softSkills": ["skill1", "skill2"],
-  "improvementAreas": ["area1", "area2"],
-  "suggestedCourses": [
-    {"title": "Course Name", "platform": "Platform", "reason": "Why this course"}
-  ],
-  "complexityScore": 85
+    return out;
+  }, []);
 }
 
-Code Snippet:
-${codeSnippet}`;
+const OriginMark = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#141414"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3.5 12 H8.6" />
+    <circle cx="12" cy="12" r="3.3" />
+    <path d="M15.4 12 H20.5" />
+  </svg>
+);
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || text.match(/```\n?([\s\S]*?)\n?```/);
-    const jsonText = jsonMatch ? jsonMatch[1] : text;
-    
-    return JSON.parse(jsonText);
+const GithubGlyph = ({ size = 17 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5z" />
+  </svg>
+);
+
+const VerifyGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    <circle cx="12" cy="12" r="4.2" />
+  </svg>
+);
+
+const CheckGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
+
+const ArrowGlyph = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
+const GoogleGlyph = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 7.7-11.3 7.7-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z" />
+    <path fill="#FF3D00" d="m6.3 14.1 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.4 6.3 14.1z" />
+    <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2L31 33.3c-2 1.4-4.5 2.3-7 2.3-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.6 39.5 16.3 44 24 44z" />
+    <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.4 4.2-4.3 5.5l6.4 4.6C42.2 35.1 44 30 44 24c0-1.2-.1-2.3-.4-3.5z" />
+  </svg>
+);
+
+export const LandingPage = ({ onLogin, onRegister, isLoading }) => {
+  const grid = useContributionGrid();
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+  const [form, setForm] = useState({ name: '', identifier: '', email: '', password: '' });
+  const [authError, setAuthError] = useState(null);
+  const [forgotMsg, setForgotMsg] = useState(null);
+
+  // Live commit-analyzer demo (calls the public /api/ai/analyze_commit endpoint
+  // — Gemini key stays server-side).
+  const [demoCode, setDemoCode] = useState(SAMPLE_CODE);
+  const [demoStage, setDemoStage] = useState('IDLE');
+  const [demoResult, setDemoResult] = useState(null);
+  const [demoNote, setDemoNote] = useState(null);
+
+  const runDemoAnalysis = useCallback(async () => {
+    if (demoStage !== 'IDLE' && demoStage !== 'COMPLETE') return;
+    setDemoNote(null);
+    setDemoResult(null);
+    setDemoStage('READING_COMMITS');
+    // Faux-progress on the front so the stage bar feels alive while the API works.
+    const t1 = setTimeout(() => setDemoStage((s) => (s === 'READING_COMMITS' ? 'ANALYZING_PATTERNS' : s)), 700);
+    const t2 = setTimeout(() => setDemoStage((s) => (s === 'ANALYZING_PATTERNS' ? 'GENERATING_PATH' : s)), 1600);
+    try {
+      const res = await fetch(`${API_BASE}/ai/analyze_commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: demoCode }),
+      });
+      if (!res.ok) {
+        if (res.status === 429) throw new Error('Demo cooldown — try again in a minute (rate limit).');
+        throw new Error(`Analyzer returned ${res.status}`);
+      }
+      const data = await res.json();
+      setDemoResult(data);
+      setDemoStage('COMPLETE');
+    } catch (err) {
+      setDemoNote(err.message || 'Analyzer unavailable.');
+      setDemoStage('IDLE');
+    } finally {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    }
+  }, [demoCode, demoStage]);
+
+  // Make sure CSS vars used by inline graph cells exist on :root for the legend.
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty('--g0', 'oklch(0.245 0.008 250)');
+    root.setProperty('--g1', 'oklch(0.42 0.09 146)');
+    root.setProperty('--g2', 'oklch(0.56 0.13 145)');
+    root.setProperty('--g3', 'oklch(0.71 0.16 144)');
+    root.setProperty('--g4', 'oklch(0.86 0.19 143)');
+  }, []);
+
+  const scrollToAuth = (mode) => {
+    if (mode) setAuthMode(mode);
+    const el = document.getElementById('auth');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleAnalyze = useCallback(async () => {
-    if (stage !== 'IDLE' && stage !== 'COMPLETE') return;
-    
-    setError(null);
-    setAnalysis(null);
-    setStage('READING_COMMITS');
-
+  const submitAuth = async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+    setForgotMsg(null);
     try {
-      setTimeout(() => setStage('ANALYZING_PATTERNS'), 800);
-      setTimeout(() => setStage('GENERATING_PATH'), 1800);
-      
-      const result = await analyzeCommit(code);
-      
-      setAnalysis(result);
-      setStage('COMPLETE');
-    } catch (err) {
-      console.error('Analysis error:', err);
-      setStage('IDLE');
-      
-      setError("Demo mode: Using sample data");
-      setTimeout(() => {
-        setAnalysis({
-          technicalSkills: ["React Fiber Architecture", "Recursion", "Memoization", "Performance Optimization"],
-          softSkills: ["Clear Commit Messaging", "Refactoring", "Problem Solving"],
-          improvementAreas: ["Recursion depth limits in JS", "Stack overflow handling"],
-          suggestedCourses: [
-            { title: "Advanced Data Structures in JS", platform: "Origin Learn", reason: "Handle large trees efficiently" },
-            { title: "React Internals Deep Dive", platform: "Frontend Masters", reason: "Master the reconciliation process" }
-          ],
-          complexityScore: 85
+      if (authMode === 'login') {
+        await onLogin(form.identifier, form.password);
+      } else if (authMode === 'signup') {
+        await onRegister(form.name, form.email, form.password);
+      } else if (authMode === 'forgot') {
+        const idValue = form.identifier || form.email;
+        const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: idValue }),
         });
-        setStage('COMPLETE');
-        setError(null);
-      }, 2000);
+        const body = await res.json().catch(() => ({}));
+        // Backend always returns the generic message — surface it as-is.
+        setForgotMsg(body.message || 'If an account exists, we sent a reset link.');
+      }
+    } catch (err) {
+      setAuthError(err?.message || 'Something went wrong. Try again.');
     }
-  }, [code, stage]);
+  };
 
-  const bgClass = isDarkMode ? 'bg-[#0a0a0a]' : 'bg-gray-50';
-  const textClass = isDarkMode ? 'text-slate-50' : 'text-gray-900';
+  const startOauth = (provider) => {
+    // Backend OAuth start endpoint sends a 302 → provider auth URL.
+    window.location.href = `${API_BASE}/auth/login/${provider}`;
+  };
 
   return (
-    <div className={`min-h-screen ${bgClass} ${textClass} selection:bg-blue-500/30 font-sans transition-colors duration-300`}>
-      {/* Navbar */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 ${isDarkMode ? 'border-white/5 bg-[#0a0a0a]/80' : 'border-gray-200 bg-white/80'} border-b backdrop-blur-md`}>
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-2 cursor-pointer">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-white' : 'bg-gray-900'}`}>
-              <GitCommit className={`w-5 h-5 ${isDarkMode ? 'text-black' : 'text-white'}`} />
+    <div className="origin-landing">
+      <header className="site">
+        <div className="wrap">
+          <nav>
+            <div className="brand">
+              <span className="mk"><OriginMark /></span>
+              <span>origin</span>
             </div>
-            <span className={`text-xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>origin</span>
-          </div>
-
-          <div className="hidden md:flex items-center space-x-8 text-sm font-medium text-secondary">
-            <a href="#features" className="hover:text-white transition-colors">Features</a>
-            <a href="#demo" className="hover:text-white transition-colors">Demo</a>
-            <button 
-              onClick={toggleTheme}
-              className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
-              aria-label="Toggle theme"
-            >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-            <button 
-              onClick={() => {
-                setIsLoginMode(true);
-                scrollToAuth();
-              }}
-              className="text-white hover:text-gray-300 transition-colors"
-            >
-              Log in
-            </button>
-            <button 
-              onClick={() => {
-                setIsLoginMode(false);
-                scrollToAuth();
-              }}
-              className="bg-white text-black px-4 py-2 rounded-full hover:bg-gray-200 transition-colors"
-            >
-              Get Started
-            </button>
-          </div>
-
-          <div className="md:hidden flex items-center space-x-2">
-            <button 
-              onClick={toggleTheme}
-              className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/10 text-white' : 'hover:bg-gray-100 text-gray-900'}`}
-            >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={isDarkMode ? 'text-white' : 'text-gray-900'}>
-              {isMenuOpen ? <X /> : <Menu />}
-            </button>
-          </div>
+            <div className="nav-links">
+              <a href="#pipeline" className="hide">How it works</a>
+              <a href="#demo" className="hide">Demo</a>
+              <a href="#auth" className="hide" onClick={(e) => { e.preventDefault(); scrollToAuth('login'); }}>Log in</a>
+              <span className="nav-sep hide"></span>
+              <button type="button" className="btn btn-acc" onClick={() => scrollToAuth('signup')}>Get started</button>
+            </div>
+          </nav>
         </div>
-        
-        {isMenuOpen && (
-          <div className={`md:hidden absolute top-16 left-0 right-0 border-b p-4 flex flex-col space-y-4 ${isDarkMode ? 'bg-[#0f0f11] border-white/5' : 'bg-white border-gray-200'}`}>
-            <a href="#features" className={`${isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Features</a>
-            <a href="#demo" className={`${isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Demo</a>
-            <button 
-              onClick={() => {
-                setIsLoginMode(true);
-                scrollToAuth();
-                setIsMenuOpen(false);
-              }}
-              className={`text-left ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
-            >
-              Log in
-            </button>
-            <button 
-              onClick={() => {
-                setIsLoginMode(false);
-                scrollToAuth();
-                setIsMenuOpen(false);
-              }}
-              className={`px-4 py-2 rounded-full w-full ${isDarkMode ? 'bg-white text-black' : 'bg-gray-900 text-white'}`}
-            >
-              Get Started
-            </button>
-          </div>
-        )}
-      </nav>
+      </header>
 
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
-        <div className={`absolute inset-0 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-gray-50'}`}>
-          <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[100px] ${isDarkMode ? 'bg-blue-500/5' : 'bg-blue-500/10'}`} />
-          <div className={`absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent ${isDarkMode ? 'via-white/10' : 'via-gray-300'}`} />
-          {isDarkMode && <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.015] mix-blend-overlay pointer-events-none" />}
-        </div>
-
-        <div className="relative max-w-5xl mx-auto px-6 text-center z-10">
-          <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full border mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}>
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            <span className={`text-xs font-medium ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>Origin AI 2.0 is now live</span>
-          </div>
-
-          <h1 className={`text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-tight animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            Hiring based on <br />
-            <span className="gradient-text">Proof, not Promises.</span>
-          </h1>
-
-          <p className={`text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-            Your résumé is outdated. Origin connects your GitHub activity directly to opportunities. 
-            Our AI agents analyze your code patterns to prove your skills and suggest paths to master new ones.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
-            <button 
-              onClick={() => {
-                setIsLoginMode(false);
-                scrollToAuth();
-              }}
-              className={`h-12 px-8 rounded-full font-semibold transition-all flex items-center gap-2 group ${isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
-            >
-              <Github className="w-5 h-5" />
-              <span>Connect GitHub</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button 
-              onClick={scrollToAuth}
-              className={`h-12 px-8 rounded-full border font-semibold transition-all ${isDarkMode ? 'bg-transparent border-white/20 text-white hover:bg-white/5' : 'bg-transparent border-gray-300 text-gray-900 hover:bg-gray-100'}`}
-            >
-              View Sample Profile
-            </button>
-          </div>
-
-          <div className={`mt-20 pt-10 border-t flex flex-wrap justify-center gap-10 md:gap-20 ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
-            <div className="text-center group cursor-default">
-              <div className={`text-3xl md:text-4xl font-bold mb-2 transition-colors ${isDarkMode ? 'text-white group-hover:text-blue-400' : 'text-gray-900 group-hover:text-blue-600'}`}>10M+</div>
-              <div className={`text-xs uppercase tracking-widest font-semibold ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Lines Analyzed</div>
-            </div>
-            <div className="text-center group cursor-default">
-              <div className={`text-3xl md:text-4xl font-bold mb-2 transition-colors ${isDarkMode ? 'text-white group-hover:text-green-400' : 'text-gray-900 group-hover:text-green-600'}`}>85%</div>
-              <div className={`text-xs uppercase tracking-widest font-semibold ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Placement Rate</div>
-            </div>
-            <div className="text-center group cursor-default">
-              <div className={`text-3xl md:text-4xl font-bold mb-2 transition-colors ${isDarkMode ? 'text-white group-hover:text-purple-400' : 'text-gray-900 group-hover:text-purple-600'}`}>24/7</div>
-              <div className={`text-xs uppercase tracking-widest font-semibold ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>AI Agent Mentorship</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section id="features" className={`py-24 border-t transition-colors ${isDarkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-gray-200'}`}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-16">
-            <h2 className={`text-3xl md:text-4xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>The Future of Work</h2>
-            <p className={`max-w-2xl ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-              Origin replaces the traditional recruiting funnel with a direct data pipeline from your code editor to your next contract.
+      <main className="wrap">
+        <section className="hero">
+          <div className="hero-copy">
+            <span className="eyebrow"><span className="dot"></span><b>PROOF, NOT PROMISES</b></span>
+            <h1>Your résumé is the code you've <span className="hl"><b>already shipped.</b></span></h1>
+            <p className="lede">
+              Origin reads your real GitHub history, <em>verifies your skills with AI</em>, and routes
+              you to roles that match what you can actually do — no keywords, no inflated bullet points.
             </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {[
-              { icon: GitGraph, title: "Deep Context Analysis", desc: "We don't just count commits. We read diffs, understand architectural decisions, and evaluate code complexity to build a true skill graph.", span: "lg:col-span-2" },
-              { icon: Target, title: "Precision Matching", desc: "Get matched with projects that require exactly the skills you've proven you possess.", span: "lg:col-span-1" },
-              { icon: Brain, title: "AI Skill Gap Agents", desc: "Our agents monitor job trends and your repo, suggesting specific micro-courses to fill knowledge gaps instantly.", span: "lg:col-span-1" },
-              { icon: Zap, title: "Instant Verification", desc: "No more take-home tests. Your previous work is your test. Instant verification for 50+ languages.", span: "lg:col-span-2" }
-            ].map((feature, idx) => (
-              <div 
-                key={idx}
-                className={`group relative rounded-2xl p-8 transition-all duration-300 ${feature.span} ${isDarkMode ? 'glass-panel hover:bg-white/10' : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'}`}
-              >
-                <div className={`absolute top-8 right-8 transition-colors ${isDarkMode ? 'text-white/10 group-hover:text-white/20' : 'text-gray-300 group-hover:text-gray-400'}`}>
-                  <feature.icon className="w-12 h-12" />
-                </div>
-                <div className="h-full flex flex-col justify-end relative z-10">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-6 ${isDarkMode ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'}`}>
-                    <feature.icon className="w-5 h-5" />
-                  </div>
-                  <h3 className={`text-xl font-semibold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{feature.title}</h3>
-                  <p className={`leading-relaxed ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>{feature.desc}</p>
+            <div className="cta">
+              <button type="button" className="btn btn-acc" onClick={() => startOauth('github')}>
+                <GithubGlyph />
+                Connect GitHub
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => scrollToAuth('signup')}>
+                View a sample profile →
+              </button>
+            </div>
+            <div className="trust">
+              <span className="lbl">Engineers verified at</span>
+              <div className="marquee">
+                <div className="marquee-track">
+                  <span>STRIPE&nbsp;&nbsp;/&nbsp;&nbsp;VERCEL&nbsp;&nbsp;/&nbsp;&nbsp;LINEAR&nbsp;&nbsp;/&nbsp;&nbsp;RAMP&nbsp;&nbsp;/&nbsp;&nbsp;SUPABASE&nbsp;&nbsp;/&nbsp;&nbsp;FIGMA&nbsp;&nbsp;/&nbsp;&nbsp;NOTION</span>
+                  <span>STRIPE&nbsp;&nbsp;/&nbsp;&nbsp;VERCEL&nbsp;&nbsp;/&nbsp;&nbsp;LINEAR&nbsp;&nbsp;/&nbsp;&nbsp;RAMP&nbsp;&nbsp;/&nbsp;&nbsp;SUPABASE&nbsp;&nbsp;/&nbsp;&nbsp;FIGMA&nbsp;&nbsp;/&nbsp;&nbsp;NOTION</span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Interactive Demo */}
-      <section id="demo" className={`py-24 relative overflow-hidden transition-colors ${isDarkMode ? 'bg-[#0a0a0a] border-t border-white/5' : 'bg-gray-50 border-t border-gray-200'}`}>
-        <div className="max-w-7xl mx-auto px-6 relative">
-          <div className="text-center mb-16">
-            <h2 className={`text-3xl md:text-4xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>See Origin in Action</h2>
-            <p className={`max-w-2xl mx-auto ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-              Paste a commit diff or use the sample below. Our AI agents read the code, not just the keywords, to understand your true capability.
-            </p>
+            </div>
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-8 lg:h-[500px]">
-            <div className={`rounded-xl p-1 flex flex-col h-full overflow-hidden shadow-xl ${isDarkMode ? 'glass-panel' : 'bg-white border border-gray-200'}`}>
-              <div className={`px-4 py-3 flex items-center justify-between border-b ${isDarkMode ? 'bg-black/50 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="flex items-center space-x-2">
-                  <Terminal className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`} />
-                  <span className={`text-sm font-mono ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>commit_diff.patch</span>
+          <div className="proof">
+            <div className="card">
+              <div className="card-top">
+                <div className="avatar">AR</div>
+                <div className="who">
+                  <div className="name">Alex Rivera <span className="verified">✓ VERIFIED</span></div>
+                  <div className="handle">@alexrivera · 6y active</div>
                 </div>
-                <button 
-                  onClick={() => setCode(SAMPLE_CODE)}
-                  className={`text-xs transition-colors ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
-                >
-                  Reset Sample
-                </button>
+                <div className="score">
+                  <div className="n">94<s>/100</s></div>
+                  <div className="c">signal score</div>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-h">
+                  <span className="t">Contribution history</span>
+                  <span className="m">1,284 commits · 12mo</span>
+                </div>
+                <div className="graph">
+                  {grid.map((bg, i) => <i key={i} style={{ background: bg }} />)}
+                </div>
+                <div className="legend">
+                  Less <i className="g0" /><i className="g1" /><i className="g2" /><i className="g3" /><i className="g4" /> More
+                </div>
+              </div>
+
+              <div className="skills">
+                <div className="skill"><div className="s-name">TypeScript <small>/ 8 repos</small></div><div className="bar"><i style={{ width: '96%' }} /></div><div className="pct">96</div></div>
+                <div className="skill"><div className="s-name">Rust <small>/ 4 repos</small></div><div className="bar"><i style={{ width: '88%' }} /></div><div className="pct">88</div></div>
+                <div className="skill"><div className="s-name">Distributed Systems</div><div className="bar"><i style={{ width: '91%' }} /></div><div className="pct">91</div></div>
+                <div className="skill"><div className="s-name">API Design</div><div className="bar"><i style={{ width: '84%' }} /></div><div className="pct">84</div></div>
+              </div>
+
+              <div className="card-foot">
+                <div className="stack"><span /><span /><span /></div>
+                <div className="ft"><b>3 senior roles</b> matched this week</div>
+                <span className="go"><ArrowGlyph /></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="pipe" id="pipeline">
+          <div className="pipe-grid">
+            <div className="pipe-head">
+              <span className="k">// HOW IT WORKS</span>
+              <h2>From commit history to a matched offer — verified end to end.</h2>
+            </div>
+            <div className="flow">
+              <div className="node">
+                <div className="ic"><GithubGlyph size={20} /></div>
+                <div className="nt">Connect</div>
+                <div className="nd">Read-only access to your public + private commit graph.</div>
+              </div>
+              <div className="beam" />
+              <div className="node acc">
+                <div className="ic"><VerifyGlyph /></div>
+                <div className="nt">Verify</div>
+                <div className="nd">AI agents analyze patterns and prove skills with evidence.</div>
+              </div>
+              <div className="beam b2" />
+              <div className="node">
+                <div className="ic"><CheckGlyph /></div>
+                <div className="nt">Match</div>
+                <div className="nd">Get routed to roles that fit your proven, real-world ability.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="demo" id="demo">
+          <div className="pipe-head" style={{ marginBottom: 26 }}>
+            <span className="k">// LIVE DEMO</span>
+            <h2>Paste any commit. Watch the analyzer find the skills.</h2>
+          </div>
+
+          <div className="demo-grid">
+            <div className="demo-code-card">
+              <div className="demo-code-head">
+                <span className="demo-dots"><i /><i /><i /></span>
+                <span className="demo-file">commit.diff</span>
+                <span className="demo-stage">
+                  <span className={`stage-dot stage-${demoStage.toLowerCase()}`} />
+                  {STAGE_LABELS[demoStage]}
+                </span>
               </div>
               <textarea
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className={`flex-1 font-mono text-sm p-4 resize-none focus:outline-none ${isDarkMode ? 'bg-black/80 text-gray-300' : 'bg-white text-gray-900'}`}
-                spellCheck={false}
+                className="demo-code"
+                spellCheck="false"
+                value={demoCode}
+                readOnly
+                rows={18}
               />
-              <div className={`p-4 border-t ${isDarkMode ? 'bg-black/50 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
-                <button
-                  onClick={handleAnalyze}
-                  disabled={stage !== 'IDLE' && stage !== 'COMPLETE'}
-                  className={`w-full flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-all duration-300 ${
-                    stage === 'IDLE' || stage === 'COMPLETE' 
-                      ? isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-900 text-white hover:bg-gray-800'
-                      : isDarkMode ? 'bg-white/10 text-white cursor-wait' : 'bg-gray-200 text-gray-600 cursor-wait'
-                  }`}
-                >
-                  {stage === 'IDLE' || stage === 'COMPLETE' ? (
-                    <>
-                      <Play className="w-4 h-4" />
-                      <span>Analyze Code</span>
-                    </>
-                  ) : (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Processing...</span>
-                    </>
-                  )}
-                </button>
-                {error && (
-                  <p className="text-xs text-orange-400 mt-2 text-center">{error}</p>
-                )}
-              </div>
-            </div>
-
-            <div className={`rounded-xl p-6 h-full overflow-y-auto ${isDarkMode ? 'glass-panel' : 'bg-white border border-gray-200'}`}>
-              {stage === 'IDLE' ? (
-                <div className={`h-full border border-dashed rounded flex items-center justify-center ${isDarkMode ? 'border-white/10 text-zinc-500' : 'border-gray-300 text-gray-500'}`}>
-                  <p>Run analysis to see skills extraction</p>
-                </div>
-              ) : analysis ? (
-                <div className="space-y-6 animate-in fade-in">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
-                      <span className={`text-sm font-medium tracking-wide uppercase ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>
-                        Analysis Complete
-                      </span>
-                    </div>
-                    <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {analysis.complexityScore}<span className={`text-sm font-normal ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>/100 Impact</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className={`text-sm font-semibold mb-3 uppercase tracking-wider ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>Detected Skills</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.technicalSkills.map((skill, i) => (
-                        <span key={i} className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-medium">
-                          {skill}
-                        </span>
-                      ))}
-                      {analysis.softSkills.map((skill, i) => (
-                        <span key={i} className="px-3 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full text-xs font-medium">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className={`text-sm font-semibold mb-3 uppercase tracking-wider flex items-center gap-2 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-                      <AlertCircle className="w-4 h-4 text-orange-400" />
-                      Growth Areas
-                    </h3>
-                    <ul className="space-y-2">
-                      {analysis.improvementAreas.map((area, i) => (
-                        <li key={i} className={`text-sm flex items-start gap-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
-                          <span className="block w-1 h-1 mt-2 bg-orange-400 rounded-full flex-shrink-0" />
-                          {area}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className={`rounded-lg p-5 border ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-gray-50 border-gray-200'}`}>
-                    <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                      <BookOpen className="w-4 h-4 text-emerald-400" />
-                      Recommended Learning Path
-                    </h3>
-                    <div className="space-y-4">
-                      {analysis.suggestedCourses.map((course, i) => (
-                        <div key={i} className="group cursor-pointer">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className={`text-sm font-medium transition-colors ${isDarkMode ? 'text-white group-hover:text-emerald-400' : 'text-gray-900 group-hover:text-emerald-600'}`}>{course.title}</span>
-                            <span className={`text-[10px] uppercase px-2 py-0.5 rounded ${isDarkMode ? 'bg-white/10 text-zinc-400' : 'bg-gray-200 text-gray-600'}`}>{course.platform}</span>
-                          </div>
-                          <p className={`text-xs mb-2 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>{course.reason}</p>
-                          <div className={`w-full h-px group-last:hidden ${isDarkMode ? 'bg-white/10' : 'bg-gray-200'}`} />
-                        </div>
-                      ))}
-                    </div>
-                    <button className={`w-full mt-4 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${isDarkMode ? 'text-emerald-400 hover:text-emerald-300' : 'text-emerald-600 hover:text-emerald-700'}`}>
-                      Start Learning Plan <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center">
-                    <Loader2 className={`w-8 h-8 animate-spin mx-auto mb-4 ${isDarkMode ? 'text-blue-500' : 'text-blue-600'}`} />
-                    <p className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-                      {stage === 'READING_COMMITS' && 'Reading commits...'}
-                      {stage === 'ANALYZING_PATTERNS' && 'Analyzing patterns...'}
-                      {stage === 'GENERATING_PATH' && 'Generating learning path...'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Auth Section */}
-      <section id="auth-section" className={`py-24 relative overflow-hidden transition-colors ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-gray-50'}`}>
-        <div className={`absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] pointer-events-none ${isDarkMode ? 'from-blue-900/20 via-[#0a0a0a] to-[#0a0a0a]' : 'from-blue-500/10 via-gray-50 to-gray-50'}`} />
-        
-        <div className="max-w-md mx-auto px-6 relative">
-          <div className={`rounded-2xl p-8 shadow-2xl transition-all ${isDarkMode ? 'glass-panel hover:bg-white/10' : 'bg-white border border-gray-200 hover:shadow-3xl'}`}>
-            <div className="text-center mb-8">
-              <h2 className={`text-3xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                {isLoginMode ? 'Welcome Back!' : 'Join Origin'}
-              </h2>
-              <p className={isDarkMode ? 'text-zinc-400' : 'text-gray-600'}>
-                {isLoginMode 
-                  ? 'Sign in to discover amazing opportunities' 
-                  : 'Start collaborating on incredible projects'
-                }
-              </p>
-              {!isLoginMode && (
-                <p className="text-sm text-blue-400 mt-2">
-                  💡 You can complete your profile later in settings
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {!isLoginMode && (
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    required={!isLoginMode}
-                    className={`w-full px-4 py-3 border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-white/10 border-white/20 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
-                    placeholder="Enter your full name"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  className={`w-full px-4 py-3 border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-white/10 border-white/20 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
-                  placeholder="Enter your email"
-                />
-              </div>
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
-                  Password
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                  className={`w-full px-4 py-3 border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-white/10 border-white/20 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
-                  placeholder="Enter your password"
-                />
-              </div>
-
-              {!isLoginMode && (
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
-                    Confirm Password
-                  </label>
-                  <input
-                    type="password"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    required={!isLoginMode}
-                    className={`w-full px-4 py-3 border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode ? 'bg-white/10 border-white/20 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
-                    placeholder="Confirm your password"
-                  />
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                    {isLoginMode ? 'Signing In...' : 'Creating Account...'}
-                  </>
-                ) : (
-                  isLoginMode ? 'Sign In' : 'Create Account'
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 text-center">
-              <p className={isDarkMode ? 'text-zinc-400' : 'text-gray-600'}>
-                {isLoginMode ? "Don't have an account?" : "Already have an account?"}
+              <div className="demo-actions">
+                <span className="demo-hint mono">Sample commit · click run to analyze.</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsLoginMode(!isLoginMode);
-                    setFormData({ name: '', email: '', password: '', confirmPassword: '' });
-                  }}
-                  className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                  className="btn btn-acc"
+                  onClick={runDemoAnalysis}
+                  disabled={demoStage !== 'IDLE' && demoStage !== 'COMPLETE'}
                 >
-                  {isLoginMode ? 'Sign up' : 'Sign in'}
+                  {demoStage === 'IDLE' || demoStage === 'COMPLETE' ? 'Analyze commit →' : 'Analyzing…'}
                 </button>
+              </div>
+              {demoNote && <div className="demo-note">{demoNote}</div>}
+            </div>
+
+            <div className="demo-result-card">
+              {!demoResult && demoStage === 'IDLE' && (
+                <div className="demo-empty">
+                  <span className="mono demo-empty-k">// AWAITING INPUT</span>
+                  <p>Click <b>Analyze commit</b> to run the verifier on the snippet to the left.
+                  Results show technical + soft skills, gaps, course suggestions, and a complexity score.</p>
+                </div>
+              )}
+
+              {!demoResult && demoStage !== 'IDLE' && demoStage !== 'COMPLETE' && (
+                <div className="demo-loading">
+                  <span className={`stage-dot stage-${demoStage.toLowerCase()}`} />
+                  <span className="mono">{STAGE_LABELS[demoStage]}…</span>
+                </div>
+              )}
+
+              {demoResult && (
+                <div className="demo-result">
+                  <div className="card-top">
+                    <div className="avatar">DX</div>
+                    <div className="who">
+                      <div className="name">DevUser <span className="verified">✓ ANALYZED</span></div>
+                      <div className="handle">@devuser · commit 8f3a12b</div>
+                    </div>
+                    <div className="score">
+                      <div className="n">{Math.round(demoResult.complexityScore ?? 0)}<s>/100</s></div>
+                      <div className="c">complexity</div>
+                    </div>
+                  </div>
+
+                  <div className="panel">
+                    <div className="panel-h">
+                      <span className="t">Technical skills</span>
+                      <span className="m">{(demoResult.technicalSkills || []).length} detected</span>
+                    </div>
+                    <div className="chips">
+                      {(demoResult.technicalSkills || []).map((s, i) => (
+                        <span className="chip chip-acc mono" key={`t-${i}`}>{s}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(demoResult.softSkills || []).length > 0 && (
+                    <div className="panel">
+                      <div className="panel-h">
+                        <span className="t">Soft skills</span>
+                      </div>
+                      <div className="chips">
+                        {demoResult.softSkills.map((s, i) => (
+                          <span className="chip mono" key={`s-${i}`}>{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(demoResult.improvementAreas || []).length > 0 && (
+                    <div className="panel">
+                      <div className="panel-h">
+                        <span className="t">Improvement areas</span>
+                      </div>
+                      <ul className="bullets">
+                        {demoResult.improvementAreas.map((s, i) => <li key={`i-${i}`}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(demoResult.suggestedCourses || []).length > 0 && (
+                    <div className="panel">
+                      <div className="panel-h">
+                        <span className="t">Suggested courses</span>
+                      </div>
+                      <ul className="courses">
+                        {demoResult.suggestedCourses.map((c, i) => (
+                          <li key={`c-${i}`}>
+                            <span className="course-title">{c.title}</span>
+                            <span className="course-meta mono">{c.platform}</span>
+                            {c.reason && <p className="course-reason">{c.reason}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="stats">
+          <div className="stat"><span className="n">10M+</span><span className="l">lines of code<br />analyzed</span></div>
+          <div className="stat"><span className="n">85%</span><span className="l">interview-to-<br />placement rate</span></div>
+          <div className="stat"><span className="n">24/7</span><span className="l">autonomous agent<br />mentorship</span></div>
+        </section>
+
+        <section className="auth-section" id="auth">
+          <div className="auth-grid">
+            <div className="auth-copy">
+              <span className="eyebrow"><span className="dot" /><b>GET STARTED</b></span>
+              <h2 style={{ marginTop: 18 }}>Bring your commits. Skip the keyword game.</h2>
+              <p>
+                One-click GitHub connect is the fastest way in — Origin reads your history,
+                verifies your skills, and starts surfacing matched roles within minutes.
+                Prefer email? That works too.
               </p>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className={`py-24 relative overflow-hidden transition-colors ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-white'}`}>
-        <div className={`absolute inset-0 bg-gradient-to-b pointer-events-none ${isDarkMode ? 'from-[#0a0a0a] to-blue-900/10' : 'from-white to-blue-500/5'}`} />
-        <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
-          <h2 className={`text-4xl md:text-5xl font-bold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Ready to transform your career?</h2>
-          <p className={`text-lg mb-10 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-            Join 50,000+ developers who are letting their code speak for itself. 
-            No cover letters. No resume parsing. Just pure skill matching.
-          </p>
-          <button 
-            onClick={() => {
-              setIsLoginMode(false);
-              scrollToAuth();
-            }}
-            className={`h-14 px-10 rounded-full text-lg font-semibold hover:scale-105 transition-transform ${isDarkMode ? 'bg-white text-black shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)]' : 'bg-gray-900 text-white shadow-[0_0_40px_-10px_rgba(0,0,0,0.3)]'}`}
-          >
-            Build Your Profile Now
-          </button>
-        </div>
-      </section>
+            <div className="auth-card">
+              <div className="auth-tabs">
+                <button type="button" className={authMode === 'login' ? 'is-active' : ''} onClick={() => { setAuthMode('login'); setAuthError(null); setForgotMsg(null); }}>Log in</button>
+                <button type="button" className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(null); setForgotMsg(null); }}>Sign up</button>
+              </div>
 
-      {/* Footer */}
-      <footer className={`py-12 border-t transition-colors ${isDarkMode ? 'border-white/5 bg-[#0a0a0a]' : 'border-gray-200 bg-white'}`}>
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center">
-          <div className="flex items-center space-x-2 mb-4 md:mb-0">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-white' : 'bg-gray-900'}`}>
-              <GitCommit className={`w-3 h-3 ${isDarkMode ? 'text-black' : 'text-white'}`} />
+              {authMode !== 'forgot' && (
+                <>
+                  <div className="oauth-row">
+                    <button type="button" className="btn-oauth" onClick={() => startOauth('github')}>
+                      <GithubGlyph size={16} /> GitHub
+                    </button>
+                    <button type="button" className="btn-oauth" onClick={() => startOauth('google')}>
+                      <GoogleGlyph /> Google
+                    </button>
+                  </div>
+                  <div className="sep">or with {authMode === 'signup' ? 'email' : 'a password'}</div>
+                </>
+              )}
+
+              <form onSubmit={submitAuth} autoComplete="on">
+                {authMode === 'signup' && (
+                  <>
+                    <div className="field">
+                      <label htmlFor="auth-name">Name</label>
+                      <input
+                        id="auth-name"
+                        type="text"
+                        autoComplete="name"
+                        required
+                        value={form.name}
+                        onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="auth-email">Email</label>
+                      <input
+                        id="auth-email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {authMode === 'login' && (
+                  <div className="field">
+                    <label htmlFor="auth-id">Username or email</label>
+                    <input
+                      id="auth-id"
+                      type="text"
+                      autoComplete="username"
+                      required
+                      value={form.identifier}
+                      onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {authMode === 'forgot' && (
+                  <div className="field">
+                    <label htmlFor="forgot-id">Username or email</label>
+                    <input
+                      id="forgot-id"
+                      type="text"
+                      autoComplete="username"
+                      required
+                      value={form.identifier}
+                      onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {authMode !== 'forgot' && (
+                  <div className="field">
+                    <label htmlFor="auth-pass">Password</label>
+                    <input
+                      id="auth-pass"
+                      type="password"
+                      autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                      required
+                      minLength={8}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                <button type="submit" className="submit" disabled={isLoading}>
+                  {isLoading
+                    ? (authMode === 'login' ? 'Signing in…' : authMode === 'signup' ? 'Creating account…' : 'Sending…')
+                    : (authMode === 'login' ? 'Sign in' : authMode === 'signup' ? 'Create account' : 'Send reset link')}
+                </button>
+
+                <div className="auth-footer-row">
+                  {authMode === 'login' && (
+                    <button type="button" className="auth-link" onClick={() => { setAuthMode('forgot'); setAuthError(null); setForgotMsg(null); }}>
+                      Forgot password?
+                    </button>
+                  )}
+                  {authMode === 'forgot' && (
+                    <button type="button" className="auth-link" onClick={() => { setAuthMode('login'); setAuthError(null); setForgotMsg(null); }}>
+                      ← Back to sign in
+                    </button>
+                  )}
+                </div>
+
+                {authError && <div className="auth-error">{authError}</div>}
+                {forgotMsg && <div className="auth-ok">{forgotMsg}</div>}
+              </form>
             </div>
-            <span className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>origin</span>
           </div>
-          
-          <div className={`flex items-center space-x-6 text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-            <a href="#" className={`transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-gray-900'}`}>Privacy</a>
-            <a href="#" className={`transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-gray-900'}`}>Terms</a>
-            <a href="#" className={`transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-gray-900'}`}>Twitter</a>
-            <a href="#" className={`transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-gray-900'}`}>GitHub</a>
-          </div>
-          
-          <div className={`mt-4 md:mt-0 text-xs ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
-            © 2024 Origin AI Inc.
-          </div>
+        </section>
+      </main>
+
+      <footer className="site">
+        <div className="wrap foot">
+          <span className="c">© 2026 Origin Labs</span>
+          <span className="c">PROOF, NOT PROMISES.</span>
         </div>
       </footer>
     </div>

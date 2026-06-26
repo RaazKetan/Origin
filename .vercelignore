@@ -1,0 +1,40 @@
+# Python
+**/__pycache__
+**/*.pyc
+**/.venv
+backend/.venv
+
+# SQLite databases — never ship these to Vercel
+*.db
+backend/*.db
+
+# Local resume uploads
+backend/uploads
+backend/app/uploads
+
+# Node modules — Vercel installs fresh in CI
+frontend/node_modules
+frontend/dist
+
+# Local env files (env vars come from Vercel project settings)
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Build / deploy artifacts that aren't needed at runtime
+.gcloudignore
+backend/.gcloudignore
+frontend/.gcloudignore
+cloudbuild.yaml
+deploy.sh
+deploy-cloudbuild.sh
+Dockerfile
+backend/Dockerfile
+frontend/Dockerfile
+frontend/nginx.conf
+
+# OS / editor noise
+.DS_Store
+.vscode

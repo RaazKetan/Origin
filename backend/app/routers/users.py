@@ -1,19 +1,43 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .. import schemas, crud, auth, models
 from ..database import get_db
 from ..utils import embed_text
+from ..limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/", response_model=list[schemas.UserResponse])
-def list_users(db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def list_users(
+    request: Request,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
     return crud.get_all_users(db)
 
 
+@router.get("/check-username")
+@limiter.limit("30/minute")
+def check_username(request: Request, username: str, db: Session = Depends(get_db)):
+    """Check if a username is already taken."""
+    existing_user = (
+        db.query(models.User).filter(models.User.username == username).first()
+    )
+    if existing_user:
+        return {"available": False}
+    return {"available": True}
+
+
 @router.get("/{user_id}", response_model=schemas.UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+def get_user(
+    request: Request,
+    user_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
     user = crud.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -21,7 +45,9 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=schemas.UserResponse)
+@limiter.limit("20/minute")
 def update_user(
+    request: Request,
     user_id: int,
     user_update: schemas.UserProfileUpdate,
     current_user: models.User = Depends(auth.get_current_user),
@@ -73,7 +99,9 @@ def update_user(
 
 
 @router.post("/{user_id}/repositories", response_model=schemas.UserResponse)
+@limiter.limit("10/minute")
 def add_repository_to_user(
+    request: Request,
     user_id: int,
     repo_data: schemas.AddRepositoryRequest,
     current_user: models.User = Depends(auth.get_current_user),
@@ -151,7 +179,9 @@ def add_repository_to_user(
 @router.delete(
     "/{user_id}/repositories/{repo_index}", response_model=schemas.UserResponse
 )
+@limiter.limit("10/minute")
 def remove_repository_from_user(
+    request: Request,
     user_id: int,
     repo_index: int,
     current_user: models.User = Depends(auth.get_current_user),

@@ -1,17 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from .. import models, auth
 from ..database import get_db
 from ..utils import embed_text
+from ..limiter import limiter
 import math
+import os
 
-router = APIRouter(prefix="/talent", tags=["Talent Sourcing"])
+router = APIRouter(
+    prefix="/talent",
+    tags=["Talent Sourcing"],
+    dependencies=[Depends(auth.get_current_user)],
+)
 
 
 class TalentSearchRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=2, max_length=1000)
 
 
 class CandidateResponse(BaseModel):
@@ -36,8 +42,10 @@ class CandidateResponse(BaseModel):
 
 
 @router.post("/search", response_model=List[CandidateResponse])
+@limiter.limit("15/minute")
 async def search_candidates(
-    request: TalentSearchRequest,
+    request: Request,
+    body: TalentSearchRequest,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -46,10 +54,10 @@ async def search_candidates(
     Uses vector similarity to find best matches.
     """
     try:
-        print(f"Searching candidates for query: {request.query[:100]}...")
+        print(f"Searching candidates for query: {body.query[:100]}...")
 
         # Generate embedding for the search query
-        query_embedding = embed_text(request.query)
+        query_embedding = embed_text(body.query, task_type="retrieval_query")
         print(
             f"Generated query embedding with {len(query_embedding) if query_embedding else 0} dimensions"
         )
@@ -62,7 +70,8 @@ async def search_candidates(
 
         if not query_embedding:
             raise HTTPException(
-                status_code=500, detail="Failed to generate search embedding"
+                status_code=503,
+                detail="Search temporarily unavailable. The embedding service did not respond — check that GEMINI_API_KEY is valid.",
             )
 
         # Calculate similarity scores
@@ -115,13 +124,20 @@ async def search_candidates(
 
 
 @router.post("/seed")
+@limiter.limit("1/minute")
 async def seed_candidates(
+    request: Request,
+    x_admin_secret: Optional[str] = Header(None),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Seed database with dummy candidate data for testing.
+    Seed database with dummy candidate data. Admin-only.
+    Requires X-Admin-Secret header matching the ADMIN_SECRET env var.
     """
+    expected_secret = os.getenv("ADMIN_SECRET")
+    if not expected_secret or not x_admin_secret or x_admin_secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Admin access required")
     try:
         # Check if candidates already exist
         existing_count = db.query(models.Candidate).count()

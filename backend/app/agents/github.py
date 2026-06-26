@@ -1,9 +1,14 @@
 import os
 from google.adk.agents import Agent
 
-# Temporarily commented out due to import error
-from google.adk.tools.mcp_tool import McpToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPServerParams
+try:
+    from google.adk.tools.mcp_tool import McpToolset
+    from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPServerParams
+
+    _MCP_AVAILABLE = True
+except ImportError:
+    _MCP_AVAILABLE = False
+    print("Warning: McpToolset not available. GitHub agent will run without MCP tools.")
 
 
 def create_github_agent():
@@ -11,8 +16,7 @@ def create_github_agent():
     Creates and returns a configured GitHub Agent using MCP.
     Requires GITHUB_TOKEN environment variable.
 
-    NOTE: Temporarily disabled due to McpToolset import issues.
-    Profile setup uses analyze_user_repository from gemini_agent.py instead.
+    Falls back to a basic agent without MCP tools if McpToolset is unavailable.
     """
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token:
@@ -23,9 +27,14 @@ def create_github_agent():
             "dummy_token"  # Prevent immediate crash, but auth will fail if used
         )
 
-    # Temporarily return a basic agent without MCP tools
+    if not _MCP_AVAILABLE:
+        return Agent(
+            model=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+            name="github_agent",
+            instruction="Help users get information from GitHub. You can analyze repositories, search code, and manage issues.",
+            tools=[],
+        )
 
-    # Original implementation commented out:
     return Agent(
         model=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
         name="github_agent",
@@ -36,7 +45,7 @@ def create_github_agent():
                     url="https://api.githubcopilot.com/mcp/",
                     headers={
                         "Authorization": f"Bearer {github_token}",
-                        "X-MCP-Toolsets": "repos",  # Start with repos, can expand later
+                        "X-MCP-Toolsets": "repos",
                         "X-MCP-Readonly": "true",
                     },
                 ),

@@ -92,7 +92,6 @@ export const SideNav = ({ currentView, setView, currentUser, isDarkMode, toggleT
           </span>
         </button>
 
-        {/* Profile */}
         <button 
           onClick={() => handleNavigation('profile')}
           disabled={isNavigating}
@@ -102,10 +101,6 @@ export const SideNav = ({ currentView, setView, currentUser, isDarkMode, toggleT
         >
           <div className="relative">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 border border-white/20 shrink-0" />
-            {/* Notification Dot */}
-            {currentUser?.analysis_notification && (
-              <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-[#0f0f11] animate-pulse" />
-            )}
           </div>
           <div className="text-left opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap overflow-hidden">
             <div className="text-sm font-bold text-white">{currentUser?.name || 'User'}</div>
@@ -162,10 +157,6 @@ export const BottomNav = ({ currentView, setView, currentUser }) => {
             } disabled:opacity-50`}
           >
             <item.icon className="w-6 h-6" />
-            {/* Notification Dot for Profile */}
-            {item.id === 'profile' && currentUser?.analysis_notification && (
-              <div className="absolute top-1 right-3 w-2 h-2 bg-red-500 rounded-full border border-[#0f0f11] animate-pulse" />
-            )}
             <span className="text-xs font-medium">{item.label}</span>
           </button>
         ))}
@@ -178,7 +169,6 @@ export const BottomNav = ({ currentView, setView, currentUser }) => {
 export const Navigation = ({
   view,
   matchesCount,
-  notificationsCount,
   onDiscover,
   onMatches,
   onPostProject,
@@ -225,11 +215,6 @@ export const Navigation = ({
           }`}
         >
           {item.name}
-          {item.key === "matches" && notificationsCount > 0 && (
-            <span className="ml-2 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">
-              {notificationsCount}
-            </span>
-          )}
         </button>
       ))}
     </div>

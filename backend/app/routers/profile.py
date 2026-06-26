@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .. import schemas, models, auth
 from ..database import get_db
 from ..gemini_agent import analyze_user_repos
 from ..utils import embed_text
+from ..limiter import limiter
 import requests
 
-router = APIRouter(prefix="/profile", tags=["Profile"])
+router = APIRouter(
+    prefix="/profile", tags=["Profile"], dependencies=[Depends(auth.get_current_user)]
+)
 
 
 @router.post("/setup", response_model=schemas.UserResponse)
+@limiter.limit("5/minute")
 def setup_profile(
+    request: Request,
     data: schemas.UserProfileUpdate,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),

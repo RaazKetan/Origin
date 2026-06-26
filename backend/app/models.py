@@ -25,7 +25,7 @@ def json_column():
         return Column(JSON)
 
 
-def vector_column(dimensions=768):
+def vector_column(dimensions=3072):
     """Helper to create vector column for PostgreSQL or JSON for SQLite"""
     if is_postgres:
         from pgvector.sqlalchemy import Vector
@@ -58,7 +58,18 @@ class User(Base):
     activity_score = Column(Integer)
     top_languages = json_column()
     top_frameworks = json_column()
-    user_vector = vector_column(768)
+    # 53 weeks × 7 days of integer commit counts from GitHub's Contributions
+    # API. Stored as a flat 371-element list (chronological, oldest first).
+    # Refreshed on profile-setup completion.
+    contribution_grid = json_column()
+    contributions_total = Column(Integer)  # commits in the last 12 months
+    contribution_fetched_at = Column(DateTime(timezone=True))  # cache freshness
+    # OAuth access token captured when the user signs in via GitHub. Used to
+    # fetch their contribution data on their own quota (5k/hr per user)
+    # instead of hammering the server-side GITHUB_TOKEN. Plaintext for now —
+    # add at-rest encryption when we have time. Null for email/Google signups.
+    github_access_token = Column(String)
+    user_vector = vector_column(3072)
 
     # Profile completion and onboarding fields
     profile_completed = Column(Boolean, default=False, index=True)
@@ -131,7 +142,7 @@ class Project(Base):
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    project_vector = vector_column(768)
+    project_vector = vector_column(3072)
 
     # Denormalized fields for performance
     match_count = Column(Integer, default=0)
@@ -235,7 +246,7 @@ class Candidate(Base):
     certifications = json_column()
     education = json_column()
     summary = Column(Text)
-    candidate_vector = vector_column(768)
+    candidate_vector = vector_column(3072)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -298,7 +309,7 @@ class Job(Base):
     description = Column(Text)
     requirements = Column(Text)  # Detailed requirements
     skills = json_column()  # List of required skills
-    job_vector = vector_column(768)
+    job_vector = vector_column(3072)
     location = Column(String)
     salary_range = Column(String)
     status = Column(String, default="active", index=True)  # active, closed, draft

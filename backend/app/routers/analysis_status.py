@@ -5,17 +5,22 @@ Handles checking analysis status, retrieving pending skills,
 and accepting/dismissing analyzed skills from background jobs.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .. import schemas, models, auth
 from ..database import get_db
 from ..background_jobs import job_queue, JobStatus
+from ..limiter import limiter
 
-router = APIRouter(prefix="/analysis", tags=["Analysis"])
+router = APIRouter(
+    prefix="/analysis", tags=["Analysis"], dependencies=[Depends(auth.get_current_user)]
+)
 
 
 @router.get("/status", response_model=schemas.AnalysisStatusResponse)
+@limiter.limit("60/minute")
 async def get_analysis_status(
+    request: Request,
     current_user: models.User = Depends(auth.get_current_user),
 ):
     """
@@ -39,7 +44,9 @@ async def get_analysis_status(
 
 
 @router.get("/pending-skills", response_model=schemas.PendingSkillsResponse)
+@limiter.limit("30/minute")
 async def get_pending_skills(
+    request: Request,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -81,7 +88,9 @@ async def get_pending_skills(
 
 
 @router.post("/accept-skills")
+@limiter.limit("20/minute")
 async def accept_skills(
+    request: Request,
     data: schemas.AcceptSkillsRequest,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
@@ -122,8 +131,47 @@ async def accept_skills(
     }
 
 
+@router.get("/repo-reviews")
+@limiter.limit("30/minute")
+async def list_repo_reviews(
+    request: Request,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Every connected repo, with the agent's review when available."""
+    reviews_by_url = {
+        (r.get("url") or "").rstrip("/"): r
+        for r in (current_user.pending_repo_analysis or [])
+        if isinstance(r, dict)
+    }
+    selected = [
+        (s.get("url") if isinstance(s, dict) else s) or ""
+        for s in (current_user.github_selected_repos or [])
+    ]
+    # ponytail: union of selected + analyzed so users see repos they picked
+    # even if analysis hasn't run yet
+    urls = list(dict.fromkeys([u.rstrip("/") for u in selected if u] + list(reviews_by_url)))
+
+    out = []
+    for url in urls:
+        r = reviews_by_url.get(url) or {}
+        out.append({
+            "url": url,
+            "name": r.get("name") or url.rstrip("/").split("/")[-1] or "repository",
+            "summary": r.get("analysis_summary") or r.get("contributions") or "",
+            "languages": r.get("languages") or [],
+            "frameworks": r.get("frameworks") or [],
+            "skills_detected": r.get("skills_detected") or [],
+            "commits_count": int(r.get("commits_count") or 0),
+            "last_analyzed": r.get("last_analyzed") or None,
+            "analyzed": bool(r),
+        })
+    return {"reviews": out, "count": len(out)}
+
+
 @router.post("/dismiss")
+@limiter.limit("20/minute")
 async def dismiss_analysis(
+    request: Request,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):

@@ -1,669 +1,427 @@
-import React, { useState, useEffect } from 'react';
-import { Mail, Github, Globe, MapPin, Award, BookOpen, Layers, Code, Briefcase, Plus, X, Trash2, Calendar, GitCommit, Zap, Loader2, CheckCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Pencil, Share2, MessageSquare, MapPin, ExternalLink, Github as GithubIcon, Globe,
+  Star as StarIcon, GitFork, Loader2,
+} from 'lucide-react';
+import { GitHubCalendar } from 'react-github-calendar';
 
-export const ProfileView = ({ currentUser, onBack, onEdit, isDarkMode = true }) => {
-  const [repoUrl, setRepoUrl] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [user, setUser] = useState(currentUser);
-  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
-  const [analysisData, setAnalysisData] = useState(null);
-  
-  // Pending skills overlay state
-  const [showPendingSkillsOverlay, setShowPendingSkillsOverlay] = useState(false);
-  const [pendingSkills, setPendingSkills] = useState([]);
-  const [selectedSkills, setSelectedSkills] = useState(new Set());
-  const [loadingPendingSkills, setLoadingPendingSkills] = useState(false);
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-  // Check for pending skills on mount
+// =========================== small helpers ===========================
+
+const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('') || 'U';
+
+// "Joined N months ago" / "Joined Jun 2026". We don't say "0y active" — it's
+// nonsense for any account younger than a year and reads as broken.
+const joinedLabel = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  const ms = Date.now() - d.getTime();
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  if (days < 30) return 'Joined this month';
+  const years = Math.floor(days / 365.25);
+  if (years >= 1) return `Joined ${years}y ago`;
+  const months = Math.max(1, Math.floor(days / 30));
+  return `Joined ${months} month${months === 1 ? '' : 's'} ago`;
+};
+
+const repoMetaFromUrl = (url) => {
+  const m = String(url || '').match(/github\.com\/([^/]+)\/([^/?#]+)/i);
+  if (!m) return { owner: '', name: url };
+  return { owner: m[1], name: m[2] };
+};
+
+// language → color (matches the design's amber/sky/acc-2/ink-4 palette)
+const langColor = (lang) => {
+  const k = String(lang || '').toLowerCase();
+  if (/(rust|java)/.test(k))                        return 'oklch(0.82 0.15 78)';   // amber
+  if (/(type ?script|javascript|tsx|jsx)/.test(k))  return 'oklch(0.78 0.11 235)';  // sky
+  if (/(python|django|flask)/.test(k))              return 'oklch(0.72 0.16 144)';  // acc-2
+  if (/(go|golang)/.test(k))                        return 'oklch(0.72 0.16 144)';  // acc-2
+  if (/(c\+\+|cpp|c#|csharp)/.test(k))              return 'oklch(0.78 0.11 235)';
+  if (/(ruby)/.test(k))                             return 'oklch(0.7 0.18 25)';
+  return 'oklch(0.48 0.01 250)';                                                    // ink-4 / other
+};
+
+// Origin design palette for the contribution heatmap.
+const CALENDAR_THEME = {
+  light: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'],
+  dark:  ['#1f2024', '#3d6845', '#5d9466', '#80be88', '#a4e6a8'],
+};
+
+// Extract the GitHub username from the user's stored profile URL.
+const githubHandleFromUrl = (url) => {
+  if (!url) return null;
+  const m = String(url).match(/github\.com\/([A-Za-z0-9-]+)/i);
+  return m ? m[1] : null;
+};
+
+// =========================== component ===========================
+
+export const ProfileView = ({ currentUser, onBack }) => {
+  const user = currentUser || {};
+  // GitHub username for the calendar (parsed from the stored profile URL).
+  const githubHandle = useMemo(() => githubHandleFromUrl(user.github_profile_url), [user.github_profile_url]);
+  const totalCommits = user.contributions_total; // optional — only shown if known
+
+  // ----- derived data (real where possible, sensible fallbacks elsewhere) -----
+  const score = Math.max(0, Math.min(100, Number(user.portfolio_score) || 0));
+  const rank = user.portfolio_rank || (score >= 80 ? 'Expert' : score >= 60 ? 'Advanced' : score >= 35 ? 'Intermediate' : 'Beginner');
+  const joinedAt = joinedLabel(user.created_at);
+  const selectedRepos = Array.isArray(user.github_selected_repos) ? user.github_selected_repos : [];
+  const verified = score >= 70;
+
+  // ----- matched roles (best-effort) -----
+  const [matched, setMatched] = useState([]);
+  const [loadingMatched, setLoadingMatched] = useState(true);
   useEffect(() => {
-    if (currentUser?.analysis_notification) {
-      fetchPendingSkills();
+    const token = localStorage.getItem('token');
+    if (!token) { setLoadingMatched(false); return; }
+    fetch(`${API_BASE}/jobs/feed?limit=3`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => setMatched(Array.isArray(rows) ? rows : []))
+      .catch(() => {})
+      .finally(() => setLoadingMatched(false));
+  }, []);
+
+  // ----- pinned projects: ONLY real data from the user's selected repos.
+  // No fabricated "impact" number; show stars / forks / language when present.
+  const pinnedProjects = useMemo(() => {
+    return selectedRepos.slice(0, 5).map((r) => {
+      const { owner, name } = repoMetaFromUrl(r.url || r.repo_url || '');
+      return {
+        url: r.url || r.repo_url || '#',
+        owner,
+        name: r.name || name || 'repository',
+        description: r.description || r.summary || null,
+        stars: r.stars ?? r.stargazers_count ?? null,
+        forks: r.forks ?? r.forks_count ?? null,
+        language: r.language || null,
+      };
+    });
+  }, [selectedRepos]);
+
+  // ----- skills: just the user's actual list, no fabricated confidence numbers.
+  // We don't have per-skill confidence — pretending we do is misleading.
+  const skills = (user.skills || []).slice(0, 12);
+
+  // ----- top languages: show whatever was detected, no fake percentages.
+  const languages = (user.top_languages || []).slice(0, 6);
+
+  // ----- links -----
+  const links = useMemo(() => {
+    const out = [];
+    if (user.github_profile_url) {
+      const handle = user.github_profile_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      out.push({ kind: 'github', label: handle, href: user.github_profile_url });
     }
-  }, [currentUser]);
-
-  const fetchPendingSkills = async () => {
-    setLoadingPendingSkills(true);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/pending-skills`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setPendingSkills(data.skills || []);
-        if (data.skills && data.skills.length > 0) {
-          setShowPendingSkillsOverlay(true);
-          // Pre-select all skills
-          setSelectedSkills(new Set(data.skills.map(s => s.skill)));
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching pending skills:', err);
-    } finally {
-      setLoadingPendingSkills(false);
+    if (user.org_name && user.org_type === 'company') {
+      out.push({ kind: 'web', label: user.org_name, href: '#' });
     }
-  };
+    return out;
+  }, [user.github_profile_url, user.org_name, user.org_type]);
 
-  const toggleSkillSelection = (skill) => {
-    const newSelected = new Set(selectedSkills);
-    if (newSelected.has(skill)) {
-      newSelected.delete(skill);
-    } else {
-      newSelected.add(skill);
-    }
-    setSelectedSkills(newSelected);
-  };
+  // ponytail: only show stats we actually compute. Placeholder "—" and "0"
+  // tiles read as broken; hide until the data exists.
+  const stats = [
+    totalCommits != null && { n: totalCommits.toLocaleString(), l: 'Commits / 12mo' },
+    selectedRepos.length && { n: selectedRepos.length, l: 'Repositories' },
+    matched.length && { n: matched.length, l: 'Matched roles' },
+  ].filter(Boolean);
 
-  const handleAcceptSkills = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/accept-skills`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          accepted_skills: Array.from(selectedSkills)
-        })
-      });
-
-      if (response.ok) {
-        // Refresh user data
-        const updatedUser = { ...user, analysis_notification: false };
-        setUser(updatedUser);
-        setShowPendingSkillsOverlay(false);
-        setSuccessMessage(`Successfully added ${selectedSkills.size} skills to your profile!`);
-        setTimeout(() => setSuccessMessage(''), 3000);
-      }
-    } catch (err) {
-      console.error('Error accepting skills:', err);
-      setError('Failed to accept skills');
-    }
-  };
-
-  const handleDismissAnalysis = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analysis/dismiss`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const updatedUser = { ...user, analysis_notification: false };
-      setUser(updatedUser);
-      setShowPendingSkillsOverlay(false);
-    } catch (err) {
-      console.error('Error dismissing analysis:', err);
-    }
-  };
-
-  const handleAnalyzeRepo = async () => {
-    if (!repoUrl.trim()) {
-      setError('Please enter a repository URL');
-      return;
-    }
-
-    if (!repoUrl.includes('github.com')) {
-      setError('Please enter a valid GitHub URL');
-      return;
-    }
-
-    setAnalyzing(true);
-    setError('');
-    setSuccessMessage('');
-
-    try {
-      const token = localStorage.getItem('token');
-      
-      const analyzeResponse = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/analyze-repo/user-repo`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ repo_url: repoUrl })
-      });
-
-      if (!analyzeResponse.ok) {
-        throw new Error('Failed to analyze repository');
-      }
-
-      const analysisData = await analyzeResponse.json();
-      setAnalysisData(analysisData);
-      setShowAnalysisModal(true);
-      setRepoUrl('');
-      setError('');
-    } catch (err) {
-      console.error('Error:', err);
-      setError(err.message || 'Failed to analyze repository');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  const handleConfirmAddRepo = async () => {
-    if (!analysisData) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      
-      const addResponse = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/users/${user.id}/repositories`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ repo_data: analysisData })
-      });
-
-      if (!addResponse.ok) {
-        const errorData = await addResponse.json();
-        throw new Error(errorData.detail || 'Failed to add repository');
-      }
-
-      const updatedUser = await addResponse.json();
-      setUser(updatedUser);
-      setShowAnalysisModal(false);
-      setAnalysisData(null);
-      setSuccessMessage('Repository added successfully!');
-    } catch (err) {
-      console.error('Error:', err);
-      setError(err.message || 'Failed to add repository');
-      setShowAnalysisModal(false);
-    }
-  };
-
-  const handleRemoveRepo = async (index) => {
-    if (!confirm('Are you sure you want to remove this repository?')) {
-      return;
-    }
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/users/${user.id}/repositories/${index}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to remove repository');
-      }
-
-      const updatedUser = await response.json();
-      setUser(updatedUser);
-    } catch (err) {
-      console.error('Error:', err);
-      alert('Failed to remove repository');
-    }
-  };
-
-  const inputClass = `w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-    isDarkMode 
-      ? 'bg-zinc-800/50 border-white/10 text-white placeholder-zinc-500' 
-      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-  }`;
-
-  const cardClass = `rounded-3xl p-8 border backdrop-blur-xl ${
-    isDarkMode 
-      ? 'bg-[#18181b]/60 border-white/10' 
-      : 'bg-white border-gray-100 shadow-sm'
-  }`;
+  // =========================== render ===========================
 
   return (
-  <div className={`w-full max-w-6xl mx-auto rounded-3xl overflow-hidden shadow-2xl mt-6 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-gray-50'}`}>
-    {/* Header Section */}
-    <div className={`relative px-8 py-12 ${
-       isDarkMode 
-          ? 'bg-gradient-to-r from-indigo-900/40 via-purple-900/40 to-pink-900/40 border-b border-white/10' 
-          : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600'
-    }`}>
-      {/* Abstract Shapes */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/20 rounded-full blur-[100px] -mr-32 -mt-32 pointer-events-none"></div>
-      
-      <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex flex-col md:flex-row items-center text-center md:text-left gap-6">
-          <div className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-bold shadow-xl border-4 ${
-             isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-white/20 text-indigo-600'
-          }`}>
-            {user.avatar_url ? (
-              <img 
-                src={user.avatar_url} 
-                alt={user.name}
-                className="w-full h-full rounded-full object-cover"
-              />
-            ) : (
-              (user.name?.charAt(0) || 'U')
-            )}
-          </div>
-          <div>
-            <h1 className={`text-3xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-white'}`}>{user.name}</h1>
-            <p className={`text-lg font-medium opacity-80 ${isDarkMode ? 'text-zinc-300' : 'text-indigo-100'}`}>@{user.username}</p>
-            <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start">
-               {user.email && (
-                  <span className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-zinc-400' : 'text-indigo-100'}`}>
-                     <Mail className="w-4 h-4" /> {user.email}
-                  </span>
-               )}
-               {user.org_name && (
-                  <span className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-zinc-400' : 'text-indigo-100'}`}>
-                     <Briefcase className="w-4 h-4" /> {user.org_name}
-                  </span>
-               )}
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onEdit}
-            className={`px-6 py-2.5 rounded-xl font-medium transition-all backdrop-blur-md ${
-               isDarkMode 
-                  ? 'bg-white/10 hover:bg-white/20 text-white border border-white/10' 
-                  : 'bg-white/20 hover:bg-white/30 text-white border border-white/20'
-            }`}
-          >
-            Edit Profile
+    <div className="origin-grid min-h-screen bg-origin-bg text-origin-ink font-[family-name:var(--font-display)] antialiased">
+      <div className="relative z-10 max-w-[1280px] mx-auto px-6 py-7 pb-20">
+        {/* Topbar / breadcrumb */}
+        <header className="flex items-center gap-4 mb-5">
+          <button onClick={onBack} className="font-mono text-xs tracking-[0.1em] uppercase text-origin-ink-4 hover:text-origin-ink-2 bg-transparent border-0 cursor-pointer p-0">
+            ← Discover
           </button>
-          <button
-            onClick={onBack}
-            className={`px-6 py-2.5 rounded-xl font-medium transition-all backdrop-blur-md ${
-               isDarkMode 
-                  ? 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-300 border border-white/5' 
-                  : 'bg-black/20 hover:bg-black/30 text-white'
-            }`}
-          >
-            Back
+          <div className="font-mono text-xs tracking-[0.1em] uppercase text-origin-ink-4">PROFILE / <b className="text-origin-ink font-medium normal-case tracking-tight">{user.name || user.username || '—'}</b></div>
+          <div className="flex-1" />
+          <button className="hidden sm:inline-flex items-center gap-2 text-[13px] py-1.5 px-3 rounded-md bg-origin-bg-soft text-origin-ink border border-origin-line-2 hover:bg-origin-surface hover:border-origin-ink-4 transition-all">
+            <Share2 className="w-3.5 h-3.5" />
+            Share
           </button>
-        </div>
-      </div>
-    </div>
+          <button className="inline-flex items-center gap-2 text-[13px] py-1.5 px-3 rounded-md bg-origin-acc text-origin-acc-ink hover:bg-[oklch(0.9_0.19_142)] hover:-translate-y-px hover:shadow-[0_8px_24px_oklch(0.86_0.19_142/0.22)] transition-all">
+            <Pencil className="w-3.5 h-3.5" />
+            Edit profile
+          </button>
+        </header>
 
-    {/* Content Section */}
-    <div className="p-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Info */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Bio Section */}
-          <div className={cardClass}>
-            <h3 className={`text-xl font-bold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              <BookOpen className="w-5 h-5 text-blue-500" />
-              About Me
-            </h3>
-            <p className={`leading-relaxed ${isDarkMode ? 'text-zinc-400' : 'text-gray-700'}`}>
-              {user.bio || "No bio available. Click 'Edit Profile' to add your bio."}
-            </p>
-          </div>
+        {/* HERO CARD */}
+        <section className="bg-origin-bg-soft border border-origin-line rounded-[15px]">
+          <div className="grid grid-cols-[auto_1fr_auto] gap-5 items-center p-6 max-md:grid-cols-1 max-md:gap-5">
+            {/* avatar */}
+            <span className="w-[84px] h-[84px] rounded-full grid place-items-center font-display font-medium text-[30px] text-origin-ink-2 bg-gradient-to-br from-origin-surface-2 to-origin-surface border border-origin-line-2 flex-none overflow-hidden">
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt={user.name} className="w-full h-full rounded-full object-cover" />
+              ) : initials(user.name || user.username)}
+            </span>
 
-          {/* Skills Section */}
-          <div className={cardClass}>
-             <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-               <Award className="w-5 h-5 text-purple-500" />
-               Skills & Expertise
-             </h3>
-             <div className="flex flex-wrap gap-2">
-               {(user.skills || []).map((skill, i) => (
-                 <span
-                   key={i}
-                   className={`px-4 py-2 rounded-xl text-sm font-medium border ${
-                      isDarkMode 
-                        ? 'bg-purple-500/10 border-purple-500/20 text-purple-300' 
-                        : 'bg-purple-50 border-purple-100 text-purple-700'
-                   }`}
-                 >
-                   {skill}
-                 </span>
-               ))}
-               {(user.skills || []).length === 0 && (
-                  <span className={`italic ${isDarkMode ? 'text-zinc-600' : 'text-gray-400'}`}>No skills listed</span>
-               )}
-             </div>
-          </div>
+            {/* who */}
+            <div className="min-w-0">
+              <div className="font-display font-medium text-[26px] tracking-tight flex items-center gap-2.5 flex-wrap">
+                {user.name || user.username || 'Unknown'}
+                {verified && (
+                  <span className="inline-flex items-center gap-1 font-mono text-[10.5px] font-semibold tracking-wider uppercase text-origin-acc bg-[oklch(0.86_0.19_142/0.12)] border border-[oklch(0.86_0.19_142/0.25)] rounded-md py-[3px] px-1.5">
+                    ✓ VERIFIED
+                  </span>
+                )}
+              </div>
+              <div className="font-mono text-[13px] text-origin-ink-3 mt-1">
+                @{user.username || 'user'}{joinedAt && <> · {joinedAt}</>}
+              </div>
+              {user.bio && <p className="mt-2.5 text-[15px] leading-relaxed text-origin-ink-2 max-w-[54ch] text-pretty">{user.bio}</p>}
+              <div className="mt-3.5 flex items-center gap-3.5 flex-wrap text-[13.5px] text-origin-ink-3">
+                {user.org_name && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-origin-ink-4" />
+                    {user.org_name}{user.org_type ? ` · ${user.org_type}` : ''}
+                  </span>
+                )}
+                {user.org_name && <span className="w-[3px] h-[3px] rounded-full bg-origin-ink-4" />}
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-origin-acc shadow-[0_0_8px_var(--color-origin-acc)]" />
+                  Open to senior roles
+                </span>
+                {user.activity_score != null && (
+                  <>
+                    <span className="w-[3px] h-[3px] rounded-full bg-origin-ink-4" />
+                    <span className="inline-flex items-center gap-1.5 font-mono">Activity {user.activity_score}/100</span>
+                  </>
+                )}
+              </div>
+            </div>
 
-          {/* Technologies Section */}
-          <div className={cardClass}>
-             <h3 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-               <Layers className="w-5 h-5 text-indigo-500" />
-               Technologies
-             </h3>
-             
-             <div className="grid md:grid-cols-2 gap-6">
-               {(user.top_languages && user.top_languages.length > 0) && (
-                 <div>
-                   <h4 className={`text-sm font-semibold uppercase tracking-wider mb-3 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Languages</h4>
-                   <div className="flex flex-wrap gap-2">
-                     {user.top_languages.map((lang, i) => (
-                       <span key={i} className={`px-3 py-1.5 rounded-lg text-sm border ${
-                          isDarkMode 
-                            ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                            : 'bg-green-50 border-green-100 text-green-700'
-                       }`}>
-                         {lang}
-                       </span>
-                     ))}
-                   </div>
-                 </div>
-               )}
-               
-               {(user.top_frameworks && user.top_frameworks.length > 0) && (
-                 <div>
-                    <h4 className={`text-sm font-semibold uppercase tracking-wider mb-3 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Frameworks</h4>
-                    <div className="flex flex-wrap gap-2">
-                     {user.top_frameworks.map((fw, i) => (
-                       <span key={i} className={`px-3 py-1.5 rounded-lg text-sm border ${
-                          isDarkMode 
-                            ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' 
-                            : 'bg-blue-50 border-blue-100 text-blue-700'
-                       }`}>
-                         {fw}
-                       </span>
-                     ))}
-                   </div>
-                 </div>
-               )}
-             </div>
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Activity Score */}
-          {user.activity_score && (
-            <div className={`rounded-3xl p-6 border ${
-               isDarkMode 
-                  ? 'bg-gradient-to-br from-green-900/20 to-emerald-900/20 border-green-500/20' 
-                  : 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200'
-            }`}>
-              <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                <Zap className="w-5 h-5 text-green-500" />
-                Activity Level
-              </h3>
-              <div className="flex items-center mb-2">
-                <div className={`flex-1 rounded-full h-2 mr-3 ${isDarkMode ? 'bg-zinc-800' : 'bg-gray-200'}`}>
-                  <div 
-                    className="bg-green-500 h-2 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]" 
-                    style={{ width: `${user.activity_score}%` }}
-                  ></div>
+            {/* right: score ring + message */}
+            <div className="flex flex-col items-end gap-3.5 max-md:flex-row max-md:items-center max-md:justify-between max-md:w-full">
+              <div className="text-center">
+                <div className="origin-score-ring w-[92px] h-[92px] relative grid place-items-center rounded-full" style={{ '--p': score }}>
+                  <span className="relative z-10 font-mono font-semibold text-[26px] tracking-tight text-origin-ink">
+                    {score}<s className="font-mono text-xs text-origin-ink-4 no-underline">/100</s>
+                  </span>
                 </div>
-                <span className="text-green-500 font-bold">{user.activity_score}%</span>
+                <div className="font-mono text-[10px] tracking-widest uppercase text-origin-ink-4 mt-1.5 text-center">Signal score</div>
               </div>
-              <p className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-                {user.activity_score > 80 ? "🔥 Very Active" : 
-                 user.activity_score > 60 ? "⚡ Active" : 
-                 user.activity_score > 40 ? "🌱 Moderately Active" : "💤 Getting Started"}
-              </p>
+              <div className="flex gap-2.5">
+                <button className="inline-flex items-center gap-2 text-[13px] py-1.5 px-3 rounded-md bg-origin-bg-soft text-origin-ink border border-origin-line-2 hover:bg-origin-surface hover:border-origin-ink-4 transition-all">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Message
+                </button>
+              </div>
             </div>
-          )}
+          </div>
 
-          {/* GitHub Repositories Management */}
-          <div className={cardClass}>
-            <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              <Github className="w-5 h-5" />
-              Repositories
-            </h3>
-            
-            {/* Add Repository Form */}
-            <div className="mb-6">
-              <div className="flex gap-2">
-                 <input
-                   type="url"
-                   className={`flex-1 px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
-                      isDarkMode 
-                         ? 'bg-zinc-900/50 border-white/10 text-white placeholder-zinc-600' 
-                         : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
-                   }`}
-                   placeholder="github.com/user/repo"
-                   value={repoUrl}
-                   onChange={(e) => setRepoUrl(e.target.value)}
-                   disabled={analyzing}
-                 />
-                 <button
-                   onClick={handleAnalyzeRepo}
-                   disabled={analyzing || !repoUrl.trim()}
-                   className={`px-3 py-2 rounded-lg transition-colors ${
-                      isDarkMode
-                         ? 'bg-white text-black hover:bg-zinc-200 disabled:opacity-50'
-                         : 'bg-black text-white hover:bg-gray-800 disabled:opacity-50'
-                   }`}
-                 >
-                    {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                 </button>
+          {/* stats row */}
+          <div className="grid grid-cols-4 border-t border-origin-line max-sm:grid-cols-2">
+            {stats.map((s, i) => (
+              <div
+                key={s.l}
+                className={`py-4 px-6 ${i > 0 ? 'border-l border-origin-line' : ''} max-sm:[&:nth-child(3)]:border-l-0 max-sm:[&:nth-child(n+3)]:border-t max-sm:[&:nth-child(n+3)]:border-origin-line`}
+              >
+                <div className="font-display font-medium text-[22px] tracking-tight">{s.n}</div>
+                <div className="font-mono text-[10.5px] tracking-widest uppercase text-origin-ink-4 mt-1">{s.l}</div>
               </div>
-              {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-              {successMessage && <p className="text-green-500 text-xs mt-2">{successMessage}</p>}
-            </div>
+            ))}
+          </div>
+        </section>
 
-            {/* Repository List */}
-            {Array.isArray(user.github_selected_repos) && user.github_selected_repos.length > 0 ? (
-              <div className="space-y-3">
-                {user.github_selected_repos.map((repo, i) => (
-                  <div key={i} className={`rounded-xl p-3 border transition-colors group ${
-                     isDarkMode 
-                        ? 'bg-zinc-900/30 border-white/5 hover:bg-zinc-900/50' 
-                        : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
-                  }`}>
-                    <div className="flex items-start justify-between mb-2">
-                      <a href={repo.url} target="_blank" rel="noreferrer" className={`font-medium text-sm truncate hover:underline ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                        {repo.name || repo.url}
-                      </a>
-                      <button onClick={() => handleRemoveRepo(i)} className="text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-500/10 rounded">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {repo.languages?.slice(0,3).map((lang, idx) => (
-                        <span key={idx} className={`px-1.5 py-0.5 text-[10px] rounded border ${
-                           isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-white border-gray-200 text-gray-500'
-                        }`}>
-                          {lang}
-                        </span>
-                      ))}
-                    </div>
-                    
-                    {repo.last_analyzed && (
-                       <div className={`flex items-center gap-1 text-[10px] ${isDarkMode ? 'text-zinc-600' : 'text-gray-400'}`}>
-                          <Calendar className="w-3 h-3" />
-                          <span>{new Date(repo.last_analyzed).toLocaleDateString()}</span>
-                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className={`text-center py-8 rounded-xl border border-dashed text-sm ${
-                 isDarkMode ? 'border-zinc-800 text-zinc-600' : 'border-gray-200 text-gray-400'
-              }`}>
-                 <GitCommit className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                 No repositories connected
-              </div>
+        {/* MAIN GRID */}
+        <div className="grid gap-5 mt-5 grid-cols-[minmax(0,1fr)_320px] items-start max-[1080px]:grid-cols-1">
+          {/* LEFT */}
+          <div className="flex flex-col gap-5">
+            {/* Contribution heatmap — react-github-calendar fetches public
+                contributions for the user's GitHub handle. No server token,
+                no fake data: if the user hasn't linked GitHub, we hide it. */}
+            {githubHandle && (
+              <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+                <CardHead
+                  title="Verified contribution history"
+                  meta={totalCommits != null ? `${totalCommits.toLocaleString()} commits · last 12 months` : 'from GitHub'}
+                />
+                <div className="overflow-x-auto">
+                  <GitHubCalendar
+                    username={githubHandle}
+                    colorScheme="dark"
+                    theme={CALENDAR_THEME}
+                    blockSize={11}
+                    blockMargin={3}
+                    fontSize={11}
+                    hideTotalCount
+                    labels={{ totalCount: '{{count}} contributions in the last year' }}
+                    errorMessage="Couldn't load GitHub activity. Make sure the username is correct."
+                  />
+                </div>
+              </section>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
 
-    {/* Repository Analysis Modal */}
-    {showAnalysisModal && analysisData && (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className={`rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border ${
-           isDarkMode ? 'bg-[#18181b] border-white/10' : 'bg-white border-gray-200'
-        }`}>
-          {/* Modal Header */}
-          <div className={`px-8 py-6 flex items-center justify-between border-b ${isDarkMode ? 'border-white/5' : 'border-gray-100'}`}>
-             <h3 className={`text-2xl font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                <Code className="w-6 h-6 text-indigo-500" />
-                Repository Analysis
-             </h3>
-             <button onClick={() => { setShowAnalysisModal(false); setAnalysisData(null); }} className={`p-2 rounded-full hover:bg-white/10 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
-                <X className="w-6 h-6" />
-             </button>
-          </div>
-
-          <div className="p-8 space-y-8">
-            {/* Repo Details */}
-             <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-zinc-900/50 border-white/5' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="flex items-center justify-between mb-2">
-                   <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{analysisData.name}</h4>
-                   <a href={analysisData.url} target="_blank" className="text-sm text-blue-500 hover:underline">{analysisData.url}</a>
-                </div>
-                <div className="flex gap-4 text-sm">
-                   <span className={isDarkMode ? 'text-zinc-400' : 'text-gray-600'}>{analysisData.commits_count} commits</span>
-                   <span className={isDarkMode ? 'text-zinc-400' : 'text-gray-600'}>{analysisData.contributions} contribution type</span>
-                </div>
-             </div>
-
-             {/* AI Summary */}
-             <div>
-                <h4 className={`text-sm font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Analysis Summary</h4>
-                <p className={`leading-relaxed ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>{analysisData.analysis_summary}</p>
-             </div>
-
-             {/* Detected Skills */}
-             <div>
-                <h4 className={`text-sm font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Skills Detected</h4>
-                <div className="flex flex-wrap gap-2">
-                   {analysisData.skills_detected?.map((skill, i) => (
-                      <span key={i} className={`px-3 py-1 rounded-lg text-sm border ${
-                         isDarkMode ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' : 'bg-indigo-50 border-indigo-100 text-indigo-700'
-                      }`}>
-                         {skill}
-                      </span>
-                   ))}
-                </div>
-             </div>
-          </div>
-
-          <div className={`px-8 py-6 border-t flex justify-end gap-3 ${isDarkMode ? 'border-white/5 bg-zinc-900/50' : 'border-gray-100 bg-gray-50'}`}>
-             <button onClick={() => { setShowAnalysisModal(false); setAnalysisData(null); }} className={`px-6 py-2 rounded-xl font-medium ${isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>
-                Cancel
-             </button>
-             <button onClick={handleConfirmAddRepo} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">
-                Confirm & Add
-             </button>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* Pending Skills Overlay */}
-    {showPendingSkillsOverlay && pendingSkills.length > 0 && (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className={`rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border ${
-          isDarkMode ? 'bg-[#18181b] border-white/10' : 'bg-white border-gray-200'
-        }`}>
-          {/* Header */}
-          <div className={`px-8 py-6 flex items-center justify-between border-b ${isDarkMode ? 'border-white/5' : 'border-gray-100'}`}>
-            <div>
-              <h3 className={`text-2xl font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                <CheckCircle className="w-6 h-6 text-green-500" />
-                Repository Analysis Complete!
-              </h3>
-              <p className={`text-sm mt-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-                We found {pendingSkills.length} skills from your repositories. Select which ones to add to your profile.
-              </p>
-            </div>
-            <button 
-              onClick={handleDismissAnalysis} 
-              className={`p-2 rounded-full hover:bg-white/10 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Skills by Repository */}
-          <div className="p-8 space-y-6">
-            {/* Group skills by repository */}
-            {(() => {
-              const skillsByRepo = {};
-              pendingSkills.forEach(({ skill, repo_name, repo_url }) => {
-                if (!skillsByRepo[repo_name]) {
-                  skillsByRepo[repo_name] = { url: repo_url, skills: [] };
-                }
-                skillsByRepo[repo_name].skills.push(skill);
-              });
-
-              return Object.entries(skillsByRepo).map(([repoName, { url, skills }]) => (
-                <div key={repoName} className={`p-4 rounded-xl border ${
-                  isDarkMode ? 'bg-zinc-900/50 border-white/5' : 'bg-gray-50 border-gray-200'
-                }`}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Github className={`w-4 h-4 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`} />
-                    <a 
-                      href={url} 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      className={`text-sm font-medium hover:underline ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}
+            {/* pinned projects — real GitHub data only */}
+            <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+              <CardHead title="Pinned projects" meta={pinnedProjects.length ? `${pinnedProjects.length} selected` : null} />
+              {pinnedProjects.length === 0 ? (
+                <EmptyHint>Add repositories from your profile setup to see them here.</EmptyHint>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {pinnedProjects.map((r) => (
+                    <a
+                      key={r.url}
+                      href={r.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 border border-origin-line rounded-xl bg-origin-bg hover:border-origin-line-2 hover:bg-origin-surface transition-all no-underline text-origin-ink"
                     >
-                      {repoName}
-                    </a>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2">
-                    {skills.map((skill) => (
-                      <button
-                        key={skill}
-                        onClick={() => toggleSkillSelection(skill)}
-                        className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                          selectedSkills.has(skill)
-                            ? isDarkMode
-                              ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
-                              : 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                            : isDarkMode
-                              ? 'bg-zinc-800/50 border-white/10 text-zinc-500'
-                              : 'bg-gray-100 border-gray-300 text-gray-500'
-                        }`}
-                      >
-                        <span className="text-sm font-medium">{skill}</span>
-                        {selectedSkills.has(skill) ? (
-                          <CheckCircle className="w-4 h-4" />
-                        ) : (
-                          <div className="w-4 h-4 rounded-full border-2 border-current" />
+                      <div className="font-display font-medium text-[15px] tracking-tight flex items-center gap-2 flex-wrap">
+                        {r.name}
+                        {r.owner.toLowerCase() === (user.username || '').toLowerCase() && (
+                          <span className="inline-flex items-center font-mono text-[10.5px] font-semibold tracking-wider uppercase text-origin-acc bg-[oklch(0.86_0.19_142/0.12)] border border-[oklch(0.86_0.19_142/0.25)] rounded-md py-[3px] px-1.5">
+                            ✓ OWNER
+                          </span>
                         )}
-                      </button>
-                    ))}
+                      </div>
+                      {r.description && <div className="mt-1.5 text-[13px] leading-snug text-origin-ink-3 text-pretty line-clamp-2">{r.description}</div>}
+                      <div className="mt-3 flex items-center gap-3.5 font-mono text-[11.5px] text-origin-ink-4 flex-wrap">
+                        {r.language && (
+                          <span className="inline-flex items-center gap-1.5 text-origin-ink-3">
+                            <i className="w-2 h-2 rounded-full" style={{ background: langColor(r.language) }} />
+                            {r.language}
+                          </span>
+                        )}
+                        {r.stars != null && <span className="inline-flex items-center gap-1"><StarIcon className="w-3 h-3" /> {r.stars}</span>}
+                        {r.forks != null && <span className="inline-flex items-center gap-1"><GitFork className="w-3 h-3" /> {r.forks}</span>}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* experience — only render if we have any data; we don't have a backend field yet */}
+            {user.org_name && (
+              <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+                <CardHead title="Experience" />
+                <div className="flex gap-3.5 py-3.5">
+                  <div className="w-10 h-10 rounded-[9px] flex-none bg-origin-surface border border-origin-line-2 grid place-items-center font-display font-semibold text-[15px] text-origin-ink-2">
+                    {initials(user.org_name)}
+                  </div>
+                  <div>
+                    <div className="font-display font-medium text-[14.5px] tracking-tight">{user.name || 'Member'}</div>
+                    <div className="text-[13px] text-origin-ink-3 mt-0.5">{user.org_name}{user.org_type ? ` · ${user.org_type}` : ''}</div>
                   </div>
                 </div>
-              ));
-            })()}
+              </section>
+            )}
           </div>
 
-          {/* Footer Actions */}
-          <div className={`px-8 py-6 border-t flex items-center justify-between ${
-            isDarkMode ? 'border-white/5 bg-zinc-900/50' : 'border-gray-100 bg-gray-50'
-          }`}>
-            <div className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-              {selectedSkills.size} of {pendingSkills.length} skills selected
-            </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={handleDismissAnalysis} 
-                className={`px-6 py-2 rounded-xl font-medium ${
-                  isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Dismiss
-              </button>
-              <button 
-                onClick={handleAcceptSkills}
-                disabled={selectedSkills.size === 0}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Add {selectedSkills.size} Skill{selectedSkills.size !== 1 ? 's' : ''} to Profile
-              </button>
-            </div>
+          {/* RIGHT */}
+          <div className="flex flex-col gap-5">
+            {/* skills — real list, no fabricated confidence numbers */}
+            <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+              <CardHead title="Skills" meta={skills.length ? `${skills.length} added` : null} />
+              {skills.length === 0 ? (
+                <EmptyHint>Add skills during profile setup.</EmptyHint>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {skills.map((s) => (
+                    <span key={s} className="font-mono text-[11.5px] py-1 px-2.5 rounded-md border border-origin-line text-origin-ink-2 bg-origin-bg">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* languages — chips only, no fake percentages until we have real ratios */}
+            {languages.length > 0 && (
+              <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+                <CardHead title="Languages" meta="from your repos" />
+                <div className="flex flex-wrap gap-1.5">
+                  {languages.map((l) => (
+                    <span key={l} className="inline-flex items-center gap-1.5 font-mono text-[11.5px] py-1 px-2.5 rounded-md border border-origin-line text-origin-ink-2 bg-origin-bg">
+                      <i className="w-2 h-2 rounded-full" style={{ background: langColor(l) }} />
+                      {l}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* matched roles */}
+            <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+              <CardHead title="Matched roles" meta="this week" />
+              {loadingMatched ? (
+                <div className="flex items-center gap-2 text-origin-ink-4 text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </div>
+              ) : matched.length === 0 ? (
+                <EmptyHint>No matches yet — your score is still warming up.</EmptyHint>
+              ) : (
+                <div className="flex flex-col">
+                  {matched.slice(0, 5).map((m, i) => {
+                    const companyName = m.employer_org_name || m.employer_name || 'Company';
+                    return (
+                      <a key={m.id || i} href="#" className={`flex items-center gap-3 py-3 no-underline text-origin-ink ${i > 0 ? 'border-t border-origin-line' : ''}`}>
+                        <span className="w-9 h-9 rounded-lg flex-none bg-origin-surface border border-origin-line-2 grid place-items-center font-display font-semibold text-[13px] text-origin-ink-2">
+                          {initials(companyName)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13.5px] font-medium tracking-tight truncate">{m.title || 'Role'}</div>
+                          <div className="font-mono text-[11px] text-origin-ink-4 mt-0.5 truncate">{companyName}{m.location ? ` · ${m.location}` : ''}</div>
+                        </div>
+                        <span className="ml-auto font-mono font-semibold text-[13px] text-origin-acc">
+                          {Math.round(m.final_match_score ?? m.visibility_score ?? 90)}%
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* links */}
+            {links.length > 0 && (
+              <section className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+                <CardHead title="Links" />
+                <div className="flex flex-col gap-0.5">
+                  {links.map((l) => (
+                    <a
+                      key={l.href + l.label}
+                      href={l.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-2.5 rounded-lg text-origin-ink-2 text-[13.5px] hover:bg-origin-surface hover:text-origin-ink transition-all no-underline"
+                    >
+                      {l.kind === 'github' ? <GithubIcon className="w-4 h-4 text-origin-ink-4 flex-none" /> : <Globe className="w-4 h-4 text-origin-ink-4 flex-none" />}
+                      <span className="truncate">{l.label}</span>
+                      <span className="ml-auto text-origin-ink-4"><ExternalLink className="w-3.5 h-3.5" /></span>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </div>
-    )}
-  </div>
+    </div>
   );
 };
+
+// =========================== sub-components ===========================
+
+function CardHead({ title, meta }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <span className="font-mono text-[11px] tracking-[0.13em] uppercase text-origin-ink-3">{title}</span>
+      {meta && <span className="ml-auto font-mono text-[11px] text-origin-ink-4">{meta}</span>}
+    </div>
+  );
+}
+
+function EmptyHint({ children }) {
+  return <div className="text-[13px] text-origin-ink-4 leading-snug">{children}</div>;
+}
+
+export default ProfileView;

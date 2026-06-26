@@ -12,3 +12,6 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 google-adk
+authlib
+itsdangerous
+slowapi

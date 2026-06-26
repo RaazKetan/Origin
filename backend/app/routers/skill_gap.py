@@ -1,20 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from .. import models, auth
 from ..database import get_db
+from ..limiter import limiter
 import google.generativeai as genai
 import os
 import json
 
-router = APIRouter(prefix="/skill-gap", tags=["Skill Gap Analysis"])
+router = APIRouter(
+    prefix="/skill-gap",
+    tags=["Skill Gap Analysis"],
+    dependencies=[Depends(auth.get_current_user)],
+)
 
 
 class SkillGapAnalysisRequest(BaseModel):
     candidate_id: int
-    interview_transcript: str
-    target_role: str
+    interview_transcript: str = Field(..., min_length=50, max_length=20000)
+    target_role: str = Field(..., min_length=1, max_length=200)
 
 
 class SkillGapResponse(BaseModel):
@@ -35,7 +40,9 @@ class SkillGapResponse(BaseModel):
         from_attributes = True
 
 
-def analyze_interview_with_ai(transcript: str, target_role: str, candidate_skills: List[str]) -> dict:
+def analyze_interview_with_ai(
+    transcript: str, target_role: str, candidate_skills: List[str]
+) -> dict:
     """
     Use Gemini AI to analyze interview transcript and generate skill gap analysis
     """
@@ -44,14 +51,14 @@ def analyze_interview_with_ai(transcript: str, target_role: str, candidate_skill
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise Exception("No API key found")
-        
+
         genai.configure(api_key=api_key.strip())
-        
+
         prompt = f"""
 Analyze this interview transcript for a {target_role} position.
 
 CANDIDATE BACKGROUND:
-- Current Skills: {', '.join(candidate_skills) if candidate_skills else 'Not specified'}
+- Current Skills: {", ".join(candidate_skills) if candidate_skills else "Not specified"}
 
 INTERVIEW TRANSCRIPT:
 {transcript}
@@ -137,13 +144,13 @@ IMPORTANT:
 - Readiness score should be 0-100 based on current vs required skills
 - Output ONLY valid JSON, no additional text
 """
-        
+
         model = genai.GenerativeModel("gemini-2.5-pro")
         response = model.generate_content(prompt)
-        
+
         # Parse response
         text = response.text.strip()
-        
+
         # Clean JSON markers
         if text.startswith("```json"):
             text = text[7:]
@@ -151,23 +158,34 @@ IMPORTANT:
             text = text[3:]
         if text.endswith("```"):
             text = text[:-3]
-        
+
         result = json.loads(text.strip())
         return result
-        
+
     except Exception as e:
         print(f"AI analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
-        
+
         # Return fallback analysis
         return {
             "demonstrated_skills": [
-                {"skill": s, "proficiency": "intermediate", "evidence": "Mentioned in transcript"}
+                {
+                    "skill": s,
+                    "proficiency": "intermediate",
+                    "evidence": "Mentioned in transcript",
+                }
                 for s in candidate_skills[:5]
             ],
             "skill_gaps": [
-                {"skill": "Advanced " + target_role + " skills", "priority": "high", "current_level": "intermediate", "target_level": "advanced", "impact": "important"}
+                {
+                    "skill": "Advanced " + target_role + " skills",
+                    "priority": "high",
+                    "current_level": "intermediate",
+                    "target_level": "advanced",
+                    "impact": "important",
+                }
             ],
             "strengths": ["Technical knowledge", "Communication skills"],
             "learning_roadmap": {
@@ -177,11 +195,11 @@ IMPORTANT:
                         "duration_weeks": 8,
                         "skills_to_learn": ["Advanced concepts"],
                         "milestones": ["Complete training"],
-                        "estimated_hours": 80
+                        "estimated_hours": 80,
                     }
                 ],
                 "total_duration_weeks": 8,
-                "total_estimated_hours": 80
+                "total_estimated_hours": 80,
             },
             "recommended_courses": [
                 {
@@ -192,47 +210,51 @@ IMPORTANT:
                     "duration": "20 hours",
                     "difficulty": "intermediate",
                     "cost": "free",
-                    "relevance": "Core skills development"
+                    "relevance": "Core skills development",
                 }
             ],
             "readiness_score": 60,
             "deployment_timeline": "8-10 weeks",
-            "analysis_summary": f"Analysis completed for {target_role} position. Candidate shows potential with focused training."
+            "analysis_summary": f"Analysis completed for {target_role} position. Candidate shows potential with focused training.",
         }
 
 
 @router.post("/analyze", response_model=SkillGapResponse)
+@limiter.limit("3/minute")
 async def analyze_skill_gap(
-    request: SkillGapAnalysisRequest,
+    request: Request,
+    body: SkillGapAnalysisRequest,
     current_user: models.User = Depends(auth.get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Analyze interview transcript to identify skill gaps and generate learning roadmap
     """
     try:
-        print(f"Analyzing skill gap for candidate {request.candidate_id}, role: {request.target_role}")
-        
+        print(
+            f"Analyzing skill gap for candidate {body.candidate_id}, role: {body.target_role}"
+        )
+
         # Get candidate
-        candidate = db.query(models.Candidate).filter(
-            models.Candidate.id == request.candidate_id
-        ).first()
-        
+        candidate = (
+            db.query(models.Candidate)
+            .filter(models.Candidate.id == body.candidate_id)
+            .first()
+        )
+
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
-        
+
         # Perform AI analysis
         ai_result = analyze_interview_with_ai(
-            request.interview_transcript,
-            request.target_role,
-            candidate.skills or []
+            body.interview_transcript, body.target_role, candidate.skills or []
         )
-        
+
         # Create analysis record
         analysis = models.SkillGapAnalysis(
-            candidate_id=request.candidate_id,
-            interview_transcript=request.interview_transcript,
-            target_role=request.target_role,
+            candidate_id=body.candidate_id,
+            interview_transcript=body.interview_transcript,
+            target_role=body.target_role,
             required_skills=[gap["skill"] for gap in ai_result.get("skill_gaps", [])],
             current_skills=ai_result.get("demonstrated_skills", []),
             skill_gaps=ai_result.get("skill_gaps", []),
@@ -242,15 +264,15 @@ async def analyze_skill_gap(
             readiness_score=ai_result.get("readiness_score", 50),
             deployment_timeline=ai_result.get("deployment_timeline", "Unknown"),
             analysis_summary=ai_result.get("analysis_summary", ""),
-            analyzed_by_user_id=current_user.id
+            analyzed_by_user_id=current_user.id,
         )
-        
+
         db.add(analysis)
         db.commit()
         db.refresh(analysis)
-        
+
         print(f"Analysis created with ID: {analysis.id}")
-        
+
         return SkillGapResponse(
             id=analysis.id,
             candidate_id=analysis.candidate_id,
@@ -263,32 +285,38 @@ async def analyze_skill_gap(
             readiness_score=analysis.readiness_score,
             deployment_timeline=analysis.deployment_timeline,
             analysis_summary=analysis.analysis_summary,
-            created_at=analysis.created_at.isoformat()
+            created_at=analysis.created_at.isoformat(),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Skill gap analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
 @router.get("/candidate/{candidate_id}", response_model=List[SkillGapResponse])
+@limiter.limit("30/minute")
 async def get_candidate_analyses(
+    request: Request,
     candidate_id: int,
     current_user: models.User = Depends(auth.get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Get all skill gap analyses for a candidate
     """
     try:
-        analyses = db.query(models.SkillGapAnalysis).filter(
-            models.SkillGapAnalysis.candidate_id == candidate_id
-        ).order_by(models.SkillGapAnalysis.created_at.desc()).all()
-        
+        analyses = (
+            db.query(models.SkillGapAnalysis)
+            .filter(models.SkillGapAnalysis.candidate_id == candidate_id)
+            .order_by(models.SkillGapAnalysis.created_at.desc())
+            .all()
+        )
+
         return [
             SkillGapResponse(
                 id=a.id,
@@ -302,33 +330,37 @@ async def get_candidate_analyses(
                 readiness_score=a.readiness_score,
                 deployment_timeline=a.deployment_timeline,
                 analysis_summary=a.analysis_summary,
-                created_at=a.created_at.isoformat()
+                created_at=a.created_at.isoformat(),
             )
             for a in analyses
         ]
-        
+
     except Exception as e:
         print(f"Failed to get analyses: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
 
 
 @router.get("/analysis/{analysis_id}", response_model=SkillGapResponse)
+@limiter.limit("30/minute")
 async def get_analysis(
+    request: Request,
     analysis_id: int,
     current_user: models.User = Depends(auth.get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Get specific skill gap analysis by ID
     """
     try:
-        analysis = db.query(models.SkillGapAnalysis).filter(
-            models.SkillGapAnalysis.id == analysis_id
-        ).first()
-        
+        analysis = (
+            db.query(models.SkillGapAnalysis)
+            .filter(models.SkillGapAnalysis.id == analysis_id)
+            .first()
+        )
+
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
-        
+
         return SkillGapResponse(
             id=analysis.id,
             candidate_id=analysis.candidate_id,
@@ -341,9 +373,9 @@ async def get_analysis(
             readiness_score=analysis.readiness_score,
             deployment_timeline=analysis.deployment_timeline,
             analysis_summary=analysis.analysis_summary,
-            created_at=analysis.created_at.isoformat()
+            created_at=analysis.created_at.isoformat(),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

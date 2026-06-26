@@ -1,233 +1,219 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-  Briefcase, Clock, MapPin, DollarSign, Building2,
-  Search, Filter, CheckCircle, XCircle, MessageSquare,
-  ChevronRight, BarChart3, Eye
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Briefcase, Search, MapPin, ArrowRight, Loader2 } from 'lucide-react';
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const STATUS_CONFIG = {
-  applied: {
-    label: 'Applied', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    icon: <Clock className="w-3.5 h-3.5" />, step: 1
-  },
-  reviewed: {
-    label: 'Reviewed', color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300',
-    icon: <Eye className="w-3.5 h-3.5" />, step: 2
-  },
-  interview: {
-    label: 'Interview', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300',
-    icon: <MessageSquare className="w-3.5 h-3.5" />, step: 3
-  },
-  accepted: {
-    label: 'Accepted', color: 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300',
-    icon: <CheckCircle className="w-3.5 h-3.5" />, step: 4
-  },
-  rejected: {
-    label: 'Rejected', color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300',
-    icon: <XCircle className="w-3.5 h-3.5" />, step: 0
-  }
+const initials = (s = '') => s.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || 'C';
+
+const STATUS_META = {
+  applied:   { label: 'Applied',   step: 1, tone: 'origin-ink-3' },
+  reviewed:  { label: 'Reviewed',  step: 2, tone: 'origin-ink-2' },
+  interview: { label: 'Interview', step: 3, tone: 'origin-acc' },
+  offer:     { label: 'Offer',     step: 4, tone: 'origin-acc' },
+  accepted:  { label: 'Accepted',  step: 4, tone: 'origin-acc' },
+  rejected:  { label: 'Closed',    step: 0, tone: 'origin-ink-4' },
 };
 
-const PIPELINE_STEPS = ['Applied', 'Reviewed', 'Interview', 'Offer'];
+const PIPELINE = ['Applied', 'Reviewed', 'Interview', 'Offer'];
 
-/* ─── Pipeline bar ─────────────────────────────────────── */
-const PipelineBar = ({ status }) => {
-  const step = STATUS_CONFIG[status]?.step || 1;
-  const isRejected = status === 'rejected';
+// ============================ pipeline strip ============================
 
+function Pipeline({ status }) {
+  const meta = STATUS_META[status] || STATUS_META.applied;
   return (
-    <div className="flex items-center gap-1 mt-3">
-      {PIPELINE_STEPS.map((label, i) => {
-        const stepNum = i + 1;
-        const isActive = !isRejected && step >= stepNum;
+    <div className="flex items-center gap-1.5 mt-3">
+      {PIPELINE.map((label, i) => {
+        const idx = i + 1;
+        const reached = idx <= meta.step;
         return (
-          <div key={label} className="flex-1 flex flex-col items-center gap-1">
-            <div className={`h-1.5 w-full rounded-full transition-all ${
-              isRejected ? 'bg-red-200 dark:bg-red-500/20' :
-              isActive ? 'bg-gradient-to-r from-blue-500 to-indigo-500' : 'bg-gray-200 dark:bg-white/5'
-            }`} />
-            <span className={`text-[10px] font-medium ${
-              isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-zinc-600'
-            }`}>{label}</span>
+          <div key={label} className="flex-1 flex flex-col gap-1.5">
+            <div className={`h-1 rounded-full transition-all ${reached ? 'bg-origin-acc' : 'bg-origin-surface-2'}`} />
+            <span className={`font-mono text-[10px] tracking-wider uppercase ${reached ? 'text-origin-acc' : 'text-origin-ink-4'}`}>
+              {label}
+            </span>
           </div>
         );
       })}
     </div>
   );
-};
+}
 
-/* ─── Application Card ─────────────────────────────────── */
-const ApplicationCard = ({ app }) => {
-  const statusConf = STATUS_CONFIG[app.status] || STATUS_CONFIG.applied;
+// ============================ card ============================
+
+function ApplicationCard({ app }) {
+  const company = app.employer_org_name || app.employer_name || 'Company';
+  const status = app.status || 'applied';
+  const meta = STATUS_META[status] || STATUS_META.applied;
+  const applied = useMemo(() => {
+    if (!app.created_at) return null;
+    const d = new Date(app.created_at);
+    if (isNaN(d)) return null;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }, [app.created_at]);
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1c] rounded-2xl border border-gray-100 dark:border-white/5 p-5 hover:shadow-md transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-bold text-gray-900 dark:text-white text-lg">{app.job_title}</h3>
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-zinc-400 mt-0.5">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>{app.employer_org_name || app.employer_name || 'Company Confidential'}</span>
-          </div>
+    <article className="bg-origin-bg-soft border border-origin-line rounded-[15px] p-5">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-[10px] flex-none bg-origin-surface border border-origin-line-2 grid place-items-center font-display font-semibold text-[14px] text-origin-ink-2">
+          {initials(company)}
         </div>
-        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${statusConf.color}`}>
-          {statusConf.icon}
-          {statusConf.label}
+        <div className="min-w-0 flex-1">
+          <div className="font-display font-medium text-[16px] tracking-tight text-origin-ink line-clamp-2">{app.job_title || 'Untitled role'}</div>
+          <div className="text-[13px] text-origin-ink-3 mt-0.5">{company}</div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-3">
-        {app.job_location && (
-          <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-white/5 px-2.5 py-1 rounded-full">
-            <MapPin className="w-3 h-3" /> {app.job_location}
-          </span>
-        )}
-        {app.job_salary_range && (
-          <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-white/5 px-2.5 py-1 rounded-full">
-            <DollarSign className="w-3 h-3" /> {app.job_salary_range}
-          </span>
-        )}
-        <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-white/5 px-2.5 py-1 rounded-full">
-          <Clock className="w-3 h-3" /> Applied {new Date(app.created_at).toLocaleDateString()}
+        <span className={`font-mono text-[11px] font-semibold tracking-wider uppercase py-1 px-2 rounded-md border whitespace-nowrap ${
+          meta.tone === 'origin-acc'
+            ? 'text-origin-acc bg-[oklch(0.86_0.19_142/0.1)] border-[oklch(0.86_0.19_142/0.28)]'
+            : 'text-origin-ink-3 bg-origin-bg border-origin-line-2'
+        }`}>
+          {meta.label}
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-1">
-        {(app.job_skills || []).slice(0, 4).map((skill, i) => (
-          <span key={i} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 text-xs rounded-full">
-            {skill}
+      <div className="flex flex-wrap gap-3 mt-3 text-[12.5px] text-origin-ink-3 font-mono">
+        {app.job_location && (
+          <span className="inline-flex items-center gap-1.5">
+            <MapPin className="w-3 h-3" />
+            {app.job_location}
           </span>
-        ))}
+        )}
+        {app.job_salary_range && <span>{app.job_salary_range}</span>}
+        {applied && <span>Applied {applied}</span>}
       </div>
 
-      <PipelineBar status={app.status} />
-    </div>
+      {(app.job_skills || []).length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {(app.job_skills || []).slice(0, 5).map((s) => (
+            <span key={s} className="font-mono text-[11px] py-1 px-2 rounded-md border border-origin-line text-origin-ink-2 bg-origin-bg-soft">{String(s).toLowerCase()}</span>
+          ))}
+        </div>
+      )}
+
+      <Pipeline status={status} />
+    </article>
   );
-};
+}
 
-/* ─── Main ApplicationsTracker ─────────────────────────── */
-export const ApplicationsTracker = ({ isDarkMode }) => {
-  const [applications, setApplications] = useState([]);
+// ============================ summary chips ============================
+
+const SummaryStat = ({ label, value, accent }) => (
+  <div className={`flex-1 min-w-[110px] bg-origin-bg-soft border rounded-[12px] p-4 ${accent ? 'border-[oklch(0.86_0.19_142/0.3)]' : 'border-origin-line'}`}>
+    <div className={`font-display font-medium text-[22px] tracking-tight ${accent ? 'text-origin-acc' : 'text-origin-ink'}`}>{value}</div>
+    <div className="font-mono text-[10.5px] tracking-wider uppercase text-origin-ink-4 mt-1">{label}</div>
+  </div>
+);
+
+// ============================ main ============================
+
+export const ApplicationsTracker = () => {
+  const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  useEffect(() => { fetchApplications(); }, []);
-
-  const fetchApplications = async () => {
-    setLoading(true);
+  useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/jobs/my-applications`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setApplications(await res.json());
-    } catch (err) {
-      console.error('Error fetching applications:', err);
-    } finally {
-      setLoading(false);
+    if (!token) { setLoading(false); return; }
+    fetch(`${API_BASE}/jobs/my-applications`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => setApps(Array.isArray(rows) ? rows : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const counts = useMemo(() => {
+    const out = { total: apps.length, applied: 0, reviewed: 0, interview: 0, accepted: 0 };
+    for (const a of apps) {
+      const s = a.status || 'applied';
+      if (s === 'applied')                          out.applied++;
+      else if (s === 'reviewed')                    out.reviewed++;
+      else if (s === 'interview')                   out.interview++;
+      else if (s === 'offer' || s === 'accepted')   out.accepted++;
     }
-  };
+    return out;
+  }, [apps]);
 
   const filtered = useMemo(() => {
-    return applications.filter(app => {
-      if (statusFilter && app.status !== statusFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        const hay = `${app.job_title} ${app.employer_name || ''} ${app.employer_org_name || ''} ${(app.job_skills || []).join(' ')}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+    const q = query.trim().toLowerCase();
+    return apps.filter((a) => {
+      if (statusFilter !== 'all' && (a.status || 'applied') !== statusFilter) return false;
+      if (!q) return true;
+      const hay = [a.job_title, a.employer_org_name, a.employer_name, a.job_location, ...(a.job_skills || [])]
+        .filter(Boolean).map(String).join(' ').toLowerCase();
+      return hay.includes(q);
     });
-  }, [applications, search, statusFilter]);
-
-  // Stats
-  const stats = useMemo(() => {
-    const counts = { total: applications.length, applied: 0, reviewed: 0, interview: 0, accepted: 0, rejected: 0 };
-    applications.forEach(a => { if (counts[a.status] !== undefined) counts[a.status]++; });
-    return counts;
-  }, [applications]);
+  }, [apps, query, statusFilter]);
 
   return (
-    <div className={`w-full max-w-6xl mx-auto p-6 pb-24 min-h-screen ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">
-          <span className="bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">My</span> Applications
+    <div className="w-full">
+      <div className="mb-6">
+        <h1 className="font-display font-medium text-[clamp(28px,4vw,38px)] tracking-tight">
+          <span className="text-origin-acc">My</span> Applications
         </h1>
-        <p className={`text-base ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
-          Track every job you've applied to and their status.
+        <p className="mt-2 text-[15px] text-origin-ink-3 max-w-[60ch]">
+          Track every job you've applied to and where each one stands in the pipeline.
         </p>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
-        {[
-          { label: 'Total', count: stats.total, color: 'from-blue-500 to-indigo-500' },
-          { label: 'Applied', count: stats.applied, color: 'from-blue-400 to-blue-500' },
-          { label: 'Reviewed', count: stats.reviewed, color: 'from-yellow-400 to-orange-400' },
-          { label: 'Interview', count: stats.interview, color: 'from-purple-400 to-purple-500' },
-          { label: 'Accepted', count: stats.accepted, color: 'from-green-400 to-emerald-500' },
-        ].map(s => (
-          <div key={s.label} className="bg-white dark:bg-[#1a1a1c] rounded-2xl border border-gray-100 dark:border-white/5 p-4 text-center">
-            <p className={`text-2xl font-bold bg-gradient-to-r ${s.color} bg-clip-text text-transparent`}>{s.count}</p>
-            <p className="text-xs text-gray-500 dark:text-zinc-500 font-medium mt-0.5">{s.label}</p>
-          </div>
-        ))}
+      {/* summary stats */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <SummaryStat label="Total"     value={counts.total} />
+        <SummaryStat label="Applied"   value={counts.applied} />
+        <SummaryStat label="Reviewed"  value={counts.reviewed} />
+        <SummaryStat label="Interview" value={counts.interview} accent={counts.interview > 0} />
+        <SummaryStat label="Offer"     value={counts.accepted}  accent={counts.accepted > 0} />
       </div>
 
-      {/* Search & Filter */}
-      <div className="flex gap-3 mb-6">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      {/* toolbar */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <div className="flex items-center gap-2.5 bg-origin-bg-soft border border-origin-line rounded-[11px] px-3.5 h-[42px] text-origin-ink-3 focus-within:border-origin-line-2 transition-colors flex-1 min-w-[220px]">
+          <Search className="w-[17px] h-[17px] text-origin-ink-4 flex-none" />
           <input
             type="text"
             placeholder="Search by job title or company…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white dark:bg-[#1a1a1c] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 transition-all"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="flex-1 bg-transparent border-0 outline-none text-origin-ink font-[inherit] text-[14.5px] tracking-tight placeholder:text-origin-ink-4"
           />
         </div>
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="px-4 py-3 rounded-2xl bg-white dark:bg-[#1a1a1c] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="bg-origin-bg border border-origin-line-2 rounded-[10px] px-3.5 h-[42px] text-origin-ink text-[14px] font-[inherit] tracking-tight outline-none hover:border-origin-ink-4 focus:border-origin-acc transition cursor-pointer"
         >
-          <option value="">All Statuses</option>
+          <option value="all">All statuses</option>
           <option value="applied">Applied</option>
           <option value="reviewed">Reviewed</option>
           <option value="interview">Interview</option>
+          <option value="offer">Offer</option>
           <option value="accepted">Accepted</option>
-          <option value="rejected">Rejected</option>
+          <option value="rejected">Closed</option>
         </select>
       </div>
 
-      {/* List */}
+      {/* states */}
       {loading ? (
-        <div className="text-center py-24">
-          <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-          <p className="text-gray-500 dark:text-zinc-500 font-medium">Loading applications…</p>
+        <div className="grid place-items-center py-20 text-origin-ink-4">
+          <Loader2 className="w-6 h-6 animate-spin mb-2" />
+          <div className="font-mono text-xs tracking-wider uppercase">Loading…</div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-24 bg-white dark:bg-[#1a1a1c] rounded-3xl border border-gray-100 dark:border-white/5">
-          <div className="w-20 h-20 bg-gray-50 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Briefcase className="w-8 h-8 text-gray-400 dark:text-zinc-500" />
+        <div className="bg-origin-bg-soft border border-origin-line rounded-[15px] py-16 px-8 text-center">
+          <div className="w-[60px] h-[60px] mx-auto mb-5 rounded-[14px] grid place-items-center bg-origin-surface border border-origin-line-2 text-origin-ink-2">
+            <Briefcase className="w-7 h-7" />
           </div>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-            {search || statusFilter ? 'No matching applications' : 'No applications yet'}
-          </h3>
-          <p className="text-gray-500 dark:text-zinc-400 max-w-md mx-auto">
-            {search || statusFilter
-              ? 'Try adjusting your search or status filter.'
-              : 'Start applying to jobs from the Discover page!'}
+          <h2 className="font-display font-medium text-[22px] tracking-tight text-origin-ink">
+            {apps.length === 0 ? 'No applications yet' : 'No matches'}
+          </h2>
+          <p className="mt-2 text-[14px] text-origin-ink-3 max-w-[44ch] mx-auto">
+            {apps.length === 0
+              ? "Start applying to roles from the Jobs page — they'll show up here so you can track every step."
+              : 'Try clearing the filters or search query.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {filtered.map(app => <ApplicationCard key={app.id} app={app} />)}
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-[repeat(auto-fill,minmax(400px,1fr))]">
+          {filtered.map((a) => <ApplicationCard key={a.id} app={a} />)}
         </div>
       )}
     </div>

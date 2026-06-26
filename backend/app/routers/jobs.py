@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from .. import auth
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
@@ -17,11 +18,13 @@ from ..auth import get_current_user
 from ..utils import embed_text
 from ..background_jobs import trigger_job_matching
 from ..scoring import compute_visibility_score
+from ..limiter import limiter
 
 router = APIRouter(
     prefix="/jobs",
     tags=["jobs"],
     responses={404: {"description": "Not found"}},
+    dependencies=[Depends(auth.get_current_user)],
 )
 
 
@@ -41,7 +44,9 @@ def increment_exposure(db: Session, match_ids: List[int]):
 
 
 @router.post("/", response_model=JobResponse)
+@limiter.limit("10/minute")
 async def create_job(
+    request: Request,
     job: JobCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -74,18 +79,22 @@ async def create_job(
     db.refresh(db_job)
 
     # Trigger matching against candidates
-    trigger_job_matching(db_job.id)
+    await trigger_job_matching(db_job.id)
 
     return db_job
 
 
 @router.get("/feed", response_model=List[JobResponse])
+@limiter.limit("30/minute")
 async def get_job_feed(
+    request: Request,
     background_tasks: BackgroundTasks,
     limit: int = 20,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if limit > 100:
+        limit = 100
     """
     Get personalized job feed for the current user.
     Applies visibility scoring based on match score and exposure.
@@ -158,7 +167,9 @@ async def get_job_feed(
 
 
 @router.post("/{job_id}/apply", response_model=ApplicationResponse)
+@limiter.limit("10/minute")
 async def apply_to_job(
+    request: Request,
     job_id: int,
     application: ApplicationCreate,
     current_user: User = Depends(get_current_user),
@@ -194,7 +205,9 @@ async def apply_to_job(
 
 
 @router.get("/my-applications", response_model=List[ApplicationDetailResponse])
+@limiter.limit("60/minute")
 async def get_my_applications(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -236,7 +249,9 @@ async def get_my_applications(
 
 
 @router.get("/my-connections", response_model=List[ConnectionResponse])
+@limiter.limit("60/minute")
 async def get_my_connections(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

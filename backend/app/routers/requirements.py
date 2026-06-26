@@ -1,17 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .. import schemas, models, auth
 from ..database import get_db
 from ..gemini_agent import refine_pitch
 from ..utils import embed_text
+from ..limiter import limiter
 import math
 
-router = APIRouter(prefix="/requirements", tags=["Requirements"])
+router = APIRouter(
+    prefix="/requirements",
+    tags=["Requirements"],
+    dependencies=[Depends(auth.get_current_user)],
+)
 
 
 class RequirementsAnalysis(BaseModel):
-    requirements: str
+    requirements: str = Field(..., min_length=10, max_length=5000)
 
 
 class UserRecommendation(BaseModel):
@@ -31,7 +36,9 @@ class UserRecommendation(BaseModel):
 
 
 @router.post("/analyze", response_model=list[UserRecommendation])
+@limiter.limit("5/minute")
 def analyze_requirements(
+    request: Request,
     data: RequirementsAnalysis,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),

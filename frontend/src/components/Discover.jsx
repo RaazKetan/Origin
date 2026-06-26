@@ -4,7 +4,7 @@ import {
   Filter, X, Building2, Zap, SlidersHorizontal
 } from 'lucide-react';
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 /* ─── Discover Filter Bar ──────────────────────────────── */
 const FilterBar = ({ filters, setFilters, allSkills, allLocations }) => {
@@ -425,7 +425,7 @@ export const Discover = ({ isDarkMode }) => {
       {loading ? (
         <div className="text-center py-24">
           <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-          <p className="text-gray-500 dark:text-zinc-500 font-medium">Finding your perfect matches…</p>
+          <p className="text-gray-500 dark:text-zinc-500 font-medium">Agent is working on it...</p>
         </div>
       ) : filteredJobs.length === 0 ? (
         <div className="text-center py-24 bg-white dark:bg-[#1a1a1c] rounded-3xl border border-gray-100 dark:border-white/5">

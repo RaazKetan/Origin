@@ -3,18 +3,22 @@ import { Sun, Moon } from 'lucide-react';
 import { AuthForm } from './components/Authform';
 import { Header } from './components/Header';
 import { SideNav, BottomNav } from './components/Navigation';
+import { AppShell } from './components/AppShell';
 import { ChatView } from './components/ChatView';
 import { UserDetails } from './components/UserDetails';
 import { ProfileView } from './components/ProfileView';
 import { RequirementsPage } from './components/RequirementsPage';
-import { ProfileEdit } from './components/ProfileEdit';
 import { LandingPage } from './components/LandingPage';
 import { TalentSearch } from './components/TalentSearch';
 import { Discover } from './components/Discover';
 import { ProfileSetup } from './components/ProfileSetup';
 import { Jobs } from './components/Jobs';
 import { ApplicationsTracker } from './components/ApplicationsTracker';
-const API_BASE = "http://localhost:8000";
+import { RepoReviews } from './components/RepoReviews';
+import { OAuthSetup } from './components/OAuthSetup';
+import { ResetPassword } from './components/ResetPassword';
+// GlobalAnalysisPopup retired — analysis runs inline during complete-profile.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -24,15 +28,20 @@ export function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
-  const [notifications, setNotifications] = useState([]);
-  const [messageNotifications, setMessageNotifications] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [connections, setConnections] = useState([]);
+  const [setupToken, setSetupToken] = useState(null);
+  const [resetPasswordToken, setResetPasswordToken] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    if (window.location.pathname === '/reset-password') {
+      return new URLSearchParams(window.location.search).get('token');
+    }
+    return null;
+  });
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true;
   });
-  const isLoadingNotificationsRef = useRef(false);
 
   // Apply theme to document
   useEffect(() => {
@@ -58,26 +67,6 @@ export function App() {
     }
   }, []);
 
-  const fetchNotifications = useCallback(async () => {
-    if (!currentUser || isLoadingNotificationsRef.current) return; // Prevent multiple simultaneous calls
-    
-    isLoadingNotificationsRef.current = true;
-    
-    try {
-      const token = localStorage.getItem('token');
-      const r = await fetch(`${API_BASE}/chat/notifications/${currentUser.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (r.ok) {
-        setNotifications(await r.json());
-      }
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-    } finally {
-      isLoadingNotificationsRef.current = false;
-    }
-  }, [currentUser]); // Only depend on currentUser
-
   const checkProfileCompletion = async () => {
     const token = localStorage.getItem('token');
     if (!token) return false;
@@ -98,33 +87,30 @@ export function App() {
     }
   };
 
-  const handleLogin = async (email, password) => {
+  const handleLogin = async (identifier, password) => {
     setIsLoading(true);
     try {
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        // Backend accepts {username, password} (username field can be either
+        // a username or an email — backend resolves both).
+        body: JSON.stringify({ username: identifier, password }),
       });
 
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem("token", data.access_token);
         await fetchCurrentUser();
-        
-        // Check if profile is completed
         const isComplete = await checkProfileCompletion();
-        if (isComplete) {
-          setView("discover");
-        } else {
-          setView("profileSetup");
-        }
+        setView(isComplete ? "discover" : "profileSetup");
       } else {
-        alert("Login failed");
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Incorrect username/email or password");
       }
     } catch (error) {
       console.error("Login error:", error);
-      alert("Login failed. Please try again.");
+      throw error; // Let LandingPage display it inline (no alert popups)
     } finally {
       setIsLoading(false);
     }
@@ -169,13 +155,6 @@ export function App() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setSelectedProject(project);
-    
-    // Clear message notifications for this project
-    setMessageNotifications(prev => {
-      const newNotifications = { ...prev };
-      delete newNotifications[project.id];
-      return newNotifications;
-    });
     
     try {
       const res = await fetch(`${API_BASE}/chat/${project.id}`, {
@@ -273,21 +252,6 @@ export function App() {
         const msg = await res.json();
         setChatMessages((prev) => [...prev, msg]);
         setChatInput("");
-        
-        // Show notification for the recipient
-        const recipientId = selectedProject.owner_id === currentUser.id 
-          ? ownerUser?.id 
-          : selectedProject.owner_id;
-        
-        if (recipientId) {
-          setMessageNotifications(prev => ({
-            ...prev,
-            [selectedProject.id]: (prev[selectedProject.id] || 0) + 1
-          }));
-        }
-        
-        // Refresh notifications after sending message
-        await fetchNotifications();
       } else if (res.status === 403) {
         alert("You don't have permission to send messages on this project.");
       } else {
@@ -302,7 +266,10 @@ export function App() {
 
   const viewOwner = async (ownerId) => {
     try {
-      const r = await fetch(`${API_BASE}/users/${ownerId}`);
+      const token = localStorage.getItem('token');
+      const r = await fetch(`${API_BASE}/users/${ownerId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (r.ok) {
         const u = await r.json();
         setInspectedUser(u);
@@ -331,37 +298,67 @@ export function App() {
   
   useEffect(() => {
     (async () => {
-      const ok = await fetchCurrentUser();
+      // Check for OAuth tokens in URL first
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token");
+      const urlSetupToken = params.get("setup_token");
+      const errorMsg = params.get("error");
+
+      if (errorMsg) {
+        alert("Authentication failed. Please try again.");
+        window.history.replaceState({}, document.title, "/");
+        setView("login");
+        return;
+      }
+
+      if (token) {
+        localStorage.setItem("token", token);
+        window.history.replaceState({}, document.title, "/");
+      } else if (urlSetupToken) {
+        setSetupToken(urlSetupToken);
+        window.history.replaceState({}, document.title, "/");
+        setView("oauthSetup");
+        return;
+      }
+
+      let ok = await fetchCurrentUser();
+
+      // Dev auto-login: skip the login/signup/profile-setup grind every reload.
+      // Only fires when (a) Vite is in DEV, (b) no token already, (c) the env
+      // var is set. Production builds are inert.
+      // To enable: set VITE_DEV_AUTOLOGIN_USER + VITE_DEV_AUTOLOGIN_PASS in
+      // frontend/.env.local — see env.example.
+      if (!ok && import.meta.env.DEV && import.meta.env.VITE_DEV_AUTOLOGIN_USER) {
+        try {
+          const r = await fetch(`${API_BASE}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: import.meta.env.VITE_DEV_AUTOLOGIN_USER,
+              password: import.meta.env.VITE_DEV_AUTOLOGIN_PASS || "DevPass1234",
+            }),
+          });
+          if (r.ok) {
+            const d = await r.json();
+            localStorage.setItem("token", d.access_token);
+            ok = await fetchCurrentUser();
+            console.info(`[dev-autologin] signed in as ${import.meta.env.VITE_DEV_AUTOLOGIN_USER}`);
+          } else {
+            console.warn("[dev-autologin] login failed", r.status, await r.text());
+          }
+        } catch (e) {
+          console.warn("[dev-autologin] error", e);
+        }
+      }
+
       if (ok) {
         const isComplete = await checkProfileCompletion();
-        if (isComplete) {
-          setView("discover");
-        } else {
-          setView("profileSetup");
-        }
+        setView(isComplete ? "discover" : "profileSetup");
       } else {
         setView("login");
       }
     })();
   }, []);
-
-  // Refresh notifications periodically
-  useEffect(() => {
-    if (!currentUser) return;
-    
-    // Fetch notifications immediately when currentUser is set
-    fetchNotifications();
-    
-    // Then set up the interval for periodic updates
-    // Optimize: Poll every 30s instead of 10s, and only if tab is visible
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchNotifications();
-      }
-    }, 30000); 
-    
-    return () => clearInterval(interval);
-  }, [currentUser, fetchNotifications]);
 
 
 
@@ -428,7 +425,36 @@ export function App() {
 
 
 
+  // Password-reset deep link — handled before anything else so the user
+  // doesn't have to log in to use the link from their email.
+  if (resetPasswordToken && !currentUser) {
+    return (
+      <ResetPassword
+        token={resetPasswordToken}
+        onSuccess={async () => {
+          setResetPasswordToken(null);
+          await fetchCurrentUser();
+          const complete = await checkProfileCompletion();
+          setView(complete ? "discover" : "profileSetup");
+        }}
+      />
+    );
+  }
+
   if (!currentUser) {
+    if (view === "oauthSetup" && setupToken) {
+      return (
+        <OAuthSetup 
+          setupToken={setupToken}
+          onComplete={async (token) => {
+            localStorage.setItem("token", token);
+            setSetupToken(null);
+            await fetchCurrentUser();
+            setView("profileSetup");
+          }}
+        />
+      );
+    }
     return (
       <LandingPage 
         onLogin={handleLogin}
@@ -451,56 +477,42 @@ export function App() {
     );
   }
 
+  const crumbForView = {
+    discover: <>DISCOVER / <b className="text-origin-ink font-medium normal-case tracking-tight">Projects</b></>,
+    jobs: <>JOBS / <b className="text-origin-ink font-medium normal-case tracking-tight">For you</b></>,
+    connections: <>CONNECTIONS / <b className="text-origin-ink font-medium normal-case tracking-tight">All</b></>,
+    applications: <>APPLICATIONS / <b className="text-origin-ink font-medium normal-case tracking-tight">Pipeline</b></>,
+    talent: <>FIND TALENT / <b className="text-origin-ink font-medium normal-case tracking-tight">Search</b></>,
+    profile: <>PROFILE / <b className="text-origin-ink font-medium normal-case tracking-tight">{currentUser?.name || currentUser?.username}</b></>,
+    repoReviews: <>AGENT / <b className="text-origin-ink font-medium normal-case tracking-tight">Repo Reviews</b></>,
+    requirements: <>DISCOVER / <b className="text-origin-ink font-medium normal-case tracking-tight">Find candidates</b></>,
+    chat: <>CONNECTIONS / <b className="text-origin-ink font-medium normal-case tracking-tight">Chat</b></>,
+    userDetails: <>PROFILE / <b className="text-origin-ink font-medium normal-case tracking-tight">{inspectedUser?.name || '—'}</b></>,
+  }[view] || null;
+
   return (
-    <div className={`min-h-screen font-sans flex ${isDarkMode ? 'bg-[#0a0a0a] text-slate-50' : 'bg-gray-50 text-gray-900'}`}>
-      <SideNav 
-        currentView={view} 
-        setView={(newView) => {
-          setView(newView);
-          if (newView === 'connections') {
-            fetchConnections();
-          }
-        }}
-        currentUser={currentUser}
-        isDarkMode={isDarkMode}
-        toggleTheme={toggleTheme}
-        onLogout={handleLogout}
-      />
-
-      <main className={`flex-1 md:ml-20 overflow-y-auto min-h-screen relative ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-gray-50'}`}>
-        {/* Top mobile header */}
-        <div className={`md:hidden h-16 flex items-center justify-between px-6 border-b ${isDarkMode ? 'border-white/5 bg-[#0f0f11]' : 'border-gray-200 bg-white'}`}>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
-              <svg className="w-4 h-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
-            <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>origin</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={toggleTheme}
-              className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/10 text-zinc-400' : 'hover:bg-gray-100 text-gray-600'}`}
-            >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-            <button 
-              onClick={handleLogout}
-              className={`text-sm transition-colors ${isDarkMode ? 'text-zinc-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div className="pb-24 md:pb-0 p-6 flex justify-center">
+    <AppShell
+      currentView={view}
+      onNavigate={(newView) => {
+        setView(newView);
+        if (newView === 'connections') fetchConnections();
+      }}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      crumb={crumbForView}
+      counts={{ saved: 0, messages: connections.length || null, signal: currentUser?.portfolio_score }}
+      isDarkMode={isDarkMode}
+      toggleTheme={toggleTheme}
+    >
+      {/* Legacy page bodies — each will be ported to use the design directly */}
+      <div className="w-full">
         {view === "discover" && (
-          <Discover isDarkMode={isDarkMode} />
+          /* Discover and Jobs both surface the matched-jobs feed; same UI. */
+          <Jobs />
         )}
 
         {view === "jobs" && (
-          <Jobs isDarkMode={isDarkMode} />
+          <Jobs />
         )}
 
         {view === "connections" && (
@@ -550,7 +562,11 @@ export function App() {
         )}
 
         {view === "applications" && (
-          <ApplicationsTracker isDarkMode={isDarkMode} />
+          <ApplicationsTracker />
+        )}
+
+        {view === "repoReviews" && (
+          <RepoReviews />
         )}
 
         {view === "chat" && selectedProject && (
@@ -578,19 +594,6 @@ export function App() {
           <ProfileView 
             currentUser={currentUser}
             onBack={() => setView("discover")}
-            onEdit={() => setView("profileEdit")}
-            isDarkMode={isDarkMode}
-          />
-        )}
-
-        {view === "profileEdit" && (
-          <ProfileEdit 
-            currentUser={currentUser}
-            onSave={(updatedUser) => {
-              setCurrentUser(updatedUser);
-              setView("profile");
-            }}
-            onBack={() => setView("profile")}
             isDarkMode={isDarkMode}
           />
         )}
@@ -616,17 +619,13 @@ export function App() {
           />
         )}
 
-        {view === "searchTalent" && (
-          <TalentSearch 
-            onBack={() => setView("discover")}
-            isDarkMode={isDarkMode}
-          />
+        {/* Find Talent hidden until we add the recruiter flow */}
+        {false && view === "searchTalent" && (
+          <TalentSearch />
         )}
-        </div>
-      </main>
-      
-      <BottomNav currentView={view} setView={setView} currentUser={currentUser} />
-    </div>
+      </div>
+
+    </AppShell>
   );
 }
 

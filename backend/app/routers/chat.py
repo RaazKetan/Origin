@@ -1,14 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .. import schemas, models, auth
 from ..database import get_db
-from ..database import get_db
+from ..limiter import limiter
 
-router = APIRouter(prefix="/chat", tags=["Chat"])
+MAX_CHAT_MESSAGE_CHARS = 2000
+
+router = APIRouter(prefix="/chat", tags=["Chat"], dependencies=[Depends(auth.get_current_user)])
 
 
 @router.get("/{project_id}", response_model=list[schemas.ChatMessageResponse])
+@limiter.limit("60/minute")
 def list_messages(
+    request: Request,
     project_id: int,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
@@ -36,85 +40,22 @@ def list_messages(
     )
 
 
-@router.get("/notifications/{user_id}", response_model=list[dict])
-def get_message_notifications(
-    user_id: int,
-    current_user: models.User = Depends(auth.get_current_user),
-    db: Session = Depends(get_db),
-):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # Get projects where user has unread messages
-    notifications = []
-
-    # Get projects owned by user that have new messages
-    owned_projects = (
-        db.query(models.Project).filter(models.Project.owner_id == user_id).all()
-    )
-    for project in owned_projects:
-        # Count messages not from the owner
-        msg_count = (
-            db.query(models.ChatMessage)
-            .filter(
-                models.ChatMessage.project_id == project.id,
-                models.ChatMessage.from_user_id != user_id,
-            )
-            .count()
-        )
-
-        if msg_count > 0:
-            notifications.append(
-                {
-                    "project_id": project.id,
-                    "project_title": project.title,
-                    "message_count": msg_count,
-                    "type": "owner",
-                }
-            )
-
-    # Get projects user liked that have new messages from owner
-    liked_projects = (
-        db.query(models.Project)
-        .join(models.Swipe, models.Project.id == models.Swipe.project_id)
-        .filter(
-            models.Swipe.user_id == user_id,
-            models.Swipe.is_like == True,
-            models.Swipe.approved_by_owner == True,
-        )
-        .all()
-    )
-
-    for project in liked_projects:
-        # Count messages from the project owner
-        msg_count = (
-            db.query(models.ChatMessage)
-            .filter(
-                models.ChatMessage.project_id == project.id,
-                models.ChatMessage.from_user_id == project.owner_id,
-            )
-            .count()
-        )
-
-        if msg_count > 0:
-            notifications.append(
-                {
-                    "project_id": project.id,
-                    "project_title": project.title,
-                    "message_count": msg_count,
-                    "type": "liker",
-                }
-            )
-
-    return notifications
-
-
 @router.post("/", response_model=schemas.ChatMessageResponse)
+@limiter.limit("30/minute")
 def send_message(
+    request: Request,
     msg: schemas.ChatMessageCreate,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not msg.content or not msg.content.strip():
+        raise HTTPException(status_code=400, detail="Message content is required")
+    if len(msg.content) > MAX_CHAT_MESSAGE_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Message too long. Max {MAX_CHAT_MESSAGE_CHARS} characters.",
+        )
+
     project = (
         db.query(models.Project).filter(models.Project.id == msg.project_id).first()
     )
@@ -172,7 +113,9 @@ def send_message(
 
 
 @router.post("/{project_id}/mark-read")
+@limiter.limit("60/minute")
 def mark_messages_read(
+    request: Request,
     project_id: int,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),

@@ -133,47 +133,91 @@ async def process_repository_analysis(job_id: str):
             analysis = await analyze_user_repository(repo_url)
             results.append(analysis)
             print(f"[Background] Completed analysis for: {repo_url}")
-        except Exception as e:
-            error_msg = f"Failed to analyze {repo_url}: {str(e)}"
+        except BaseException as e:
+            # NOTE: BaseException, not Exception. Google ADK / MCP raises
+            # BaseExceptionGroup from anyio task groups when the GitHub-Copilot
+            # MCP server returns 401 (or any sub-task fails) — these escape
+            # `except Exception`, killing the FastAPI request with
+            # `RuntimeError: No response returned.`
+            # We swallow them per-repo so the profile-setup flow still saves.
+            error_msg = f"Failed to analyze {repo_url}: {type(e).__name__}: {e}"
             print(f"[Background] {error_msg}")
             job_queue.add_job_error(job_id, error_msg)
+            # Re-raise KeyboardInterrupt / SystemExit so dev workflows stay sane
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
 
     if results:
         job_queue.update_job_status(job_id, JobStatus.COMPLETED, results)
         print(f"[Background] Job {job_id} completed with {len(results)} results")
+
+        # Calculate new portfolio score and activity score based on analysis
+        db: Session = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == job.user_id).first()
+            if user:
+                total_skills = set()
+                total_commits = 0
+
+                for res in results:
+                    total_commits += int(res.get("commits_count") or 0)
+                    skills = res.get("skills_detected") or []
+                    for s in skills:
+                        total_skills.add(s)
+
+                # Simple scoring algorithm
+                skill_bonus = min(len(total_skills) * 2, 40)
+                commit_bonus = min(total_commits // 10, 40)
+
+                new_portfolio_score = 20 + skill_bonus + commit_bonus
+                user.portfolio_score = min(new_portfolio_score, 100)
+
+                if user.portfolio_score >= 80:
+                    user.portfolio_rank = "Advanced"
+                elif user.portfolio_score >= 50:
+                    user.portfolio_rank = "Intermediate"
+                else:
+                    user.portfolio_rank = "Beginner"
+
+                # Activity Score
+                new_activity_score = 30 + (min(total_commits, 100) / 100 * 70)
+                user.activity_score = min(int(new_activity_score), 100)
+
+                # Update embedding
+                user.top_languages = list(total_skills)[:10]
+                vec_text = f"{user.name} {user.bio} {' '.join(user.skills or [])} {' '.join(user.top_languages or [])}"
+                user.user_vector = embed_text(vec_text)
+
+                # Persist the raw analysis on the user row so /repo-reviews
+                # and /pending-skills both see it without needing the in-memory
+                # job queue (which doesn't survive across processes/cold starts).
+                user.pending_repo_analysis = results
+                user.analysis_notification = True
+
+                db.commit()
+                print(
+                    f"[Background] Updated User {user.id} Profile Scores: Portfolio={user.portfolio_score}, Activity={user.activity_score}"
+                )
+        except Exception as e:
+            print(f"[Background] Error updating user scores: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
     else:
         job_queue.update_job_status(job_id, JobStatus.FAILED)
         print(f"[Background] Job {job_id} failed - no successful analyses")
 
 
-def start_background_job(user_id: int, repo_urls: List[str]) -> str:
+async def start_background_job(user_id: int, repo_urls: List[str]) -> str:
     """
-    Start a background job for repository analysis.
-    Returns the job_id for tracking.
+    Run repository analysis inline and return the job_id once finished.
+    On Vercel serverless the request must complete the work itself — there
+    is no persistent worker to pick up fire-and-forget tasks.
     """
     job_id = job_queue.create_job(user_id, repo_urls)
     print(f"[Background] Created job {job_id} for user {user_id}")
-
-    # Try to schedule in the running event loop; fall back to a new thread
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(process_repository_analysis(job_id))
-        print(f"[Background] Scheduled job {job_id} in running event loop")
-    except RuntimeError:
-        # No running loop — spin up a daemon thread with its own loop
-        print(f"[Background] No running loop, starting job {job_id} in new thread")
-
-        def _run():
-            _loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(_loop)
-            try:
-                _loop.run_until_complete(process_repository_analysis(job_id))
-            finally:
-                _loop.close()
-
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-
+    await process_repository_analysis(job_id)
     return job_id
 
 
@@ -343,11 +387,12 @@ async def process_match_user_with_jobs(user_id: int):
         db.close()
 
 
-def trigger_job_matching(job_id: int):
-    """Fire and forget job matching calculation"""
-    asyncio.create_task(process_match_job_with_users(job_id))
+async def trigger_job_matching(job_id: int):
+    """Run job matching inline. On Vercel serverless, fire-and-forget tasks
+    don't survive past the response, so we await the work."""
+    await process_match_job_with_users(job_id)
 
 
-def trigger_user_matching(user_id: int):
-    """Fire and forget user matching calculation"""
-    asyncio.create_task(process_match_user_with_jobs(user_id))
+async def trigger_user_matching(user_id: int):
+    """Run user matching inline. See note on trigger_job_matching."""
+    await process_match_user_with_jobs(user_id)

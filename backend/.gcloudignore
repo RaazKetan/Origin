@@ -1,0 +1,33 @@
+# Cloud Build source upload filter. Mirrors .dockerignore but is
+# applied at upload time so secrets never leave the workstation.
+.gcloudignore
+.dockerignore
+.git/
+.gitignore
+
+# Local secrets — never ship these to Cloud Build.
+.env
+.env.*
+!env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+ENV/
+
+# Local databases / uploaded files
+*.db
+*.sqlite*
+uploads/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Docs
+*.md
+!README.md

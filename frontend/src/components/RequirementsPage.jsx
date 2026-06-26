@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 export const RequirementsPage = ({ onBack, onGetRecommendations }) => {
   const [requirements, setRequirements] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -11,7 +13,7 @@ export const RequirementsPage = ({ onBack, onGetRecommendations }) => {
     setIsAnalyzing(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/requirements/analyze', {
+      const response = await fetch(`${API_BASE}/requirements/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,7 +66,7 @@ export const RequirementsPage = ({ onBack, onGetRecommendations }) => {
         disabled={!requirements.trim() || isAnalyzing}
         className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isAnalyzing ? 'Analyzing with AI...' : 'Find Matching Collaborators'}
+        {isAnalyzing ? 'Agent is working on it...' : 'Find Matching Collaborators'}
       </button>
 
       {recommendations.length > 0 && (

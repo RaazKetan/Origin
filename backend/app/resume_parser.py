@@ -1,7 +1,7 @@
 """
 Resume Parser Utility
 
-Uses Google Gemini AI to parse resume files (PDF, DOCX) and extract structured information
+Uses Google Gemini AI to parse PDF resumes and extract structured information
 including GitHub repositories, awards, skills, education, and certifications.
 """
 
@@ -12,20 +12,21 @@ import google.generativeai as genai
 from typing import Dict
 from dotenv import load_dotenv
 import PyPDF2
-from docx import Document
 
 load_dotenv()
 genai.configure(api_key=(os.getenv("GEMINI_API_KEY") or "").strip())
 
 RESUME_PARSE_PROMPT = """
 You are a resume parser. Extract structured information from the following resume text.
+First, determine if the provided text is actually a resume (Curriculum Vitae). If it's a completely unrelated document, set "is_resume" to false. Otherwise, set it to true.
 
 Resume Text:
 {resume_text}
 
 Extract and return a JSON object with the following structure:
 {{
-    "github_repos": ["list of GitHub repository URLs found in the resume"],
+    "is_resume": boolean,
+    "github_profile_url": "URL of the candidate's GitHub profile",
     "awards": ["list of awards, achievements, or extra-curricular activities"],
     "skills": ["list of technical skills, programming languages, frameworks, tools"],
     "college_name": "name of the college/university (most recent if multiple)",
@@ -35,7 +36,7 @@ Extract and return a JSON object with the following structure:
 }}
 
 Important:
-- For github_repos, look for URLs like github.com/username/repo
+- For github_profile_url, extract the main GitHub profile link (e.g. github.com/username). If there's an individual repo link, strip the repo name off to get the profile.
 - For awards, include hackathon wins, competitions, scholarships, leadership positions
 - For skills, extract technical skills only (programming languages, frameworks, tools, technologies)
 - If a field is not found, use an empty list [] or null
@@ -57,20 +58,6 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         return ""
 
 
-def extract_text_from_docx(file_content: bytes) -> str:
-    """Extract text from DOCX file"""
-    try:
-        doc_file = io.BytesIO(file_content)
-        doc = Document(doc_file)
-        text = ""
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
-        return text.strip()
-    except Exception as e:
-        print(f"Error extracting text from DOCX: {e}")
-        return ""
-
-
 async def parse_resume(file_content: bytes, filename: str) -> Dict:
     """
     Parse resume file and extract structured information using Gemini AI.
@@ -82,7 +69,7 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
     Returns:
         Dictionary with extracted information:
         {
-            "github_repos": List[str],
+            "github_profile_url": str,
             "awards": List[str],
             "skills": List[str],
             "college_name": str,
@@ -92,16 +79,11 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
         }
     """
     try:
-        # Extract text based on file type
-        filename_lower = filename.lower()
-        if filename_lower.endswith(".pdf"):
-            resume_text = extract_text_from_pdf(file_content)
-        elif filename_lower.endswith(".docx"):
-            resume_text = extract_text_from_docx(file_content)
-        else:
+        if not filename.lower().endswith(".pdf"):
             raise ValueError(
-                f"Unsupported file type: {filename}. Only PDF and DOCX are supported."
+                f"Unsupported file type: {filename}. Only PDF is supported."
             )
+        resume_text = extract_text_from_pdf(file_content)
 
         if not resume_text or len(resume_text.strip()) < 50:
             raise ValueError(
@@ -132,9 +114,14 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
 
         parsed_data = json.loads(response_text.strip())
 
+        if not parsed_data.get("is_resume", True):
+            raise ValueError(
+                "The uploaded document does not appear to be a resume. Please upload a valid resume."
+            )
+
         # Validate and set defaults
         result = {
-            "github_repos": parsed_data.get("github_repos", []),
+            "github_profile_url": parsed_data.get("github_profile_url") or "",
             "awards": parsed_data.get("awards", []),
             "skills": parsed_data.get("skills", []),
             "college_name": parsed_data.get("college_name"),
@@ -144,7 +131,7 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
         }
 
         print(
-            f"Successfully parsed resume: {len(result['skills'])} skills, {len(result['github_repos'])} repos"
+            f"Successfully parsed resume: {len(result['skills'])} skills from profile {result.get('github_profile_url')}"
         )
 
         return result
@@ -154,7 +141,7 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
         print(f"Response text: {response_text[:500]}")
         # Return empty structure
         return {
-            "github_repos": [],
+            "github_profile_url": "",
             "awards": [],
             "skills": [],
             "college_name": None,
@@ -162,6 +149,8 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
             "college_years": None,
             "certifications": [],
         }
+    except ValueError:
+        raise
     except Exception as e:
         print(f"Error parsing resume: {e}")
         import traceback
@@ -169,7 +158,7 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
         traceback.print_exc()
         # Return empty structure
         return {
-            "github_repos": [],
+            "github_profile_url": "",
             "awards": [],
             "skills": [],
             "college_name": None,

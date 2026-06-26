@@ -92,6 +92,35 @@ def refine_pitch(raw_idea: str):
         }
 
 
+def analyze_commit(code_snippet: str) -> dict:
+    """Used by the public landing-page demo. Keeps the Gemini key server-side."""
+    prompt = (
+        "You are Origin, an AI agent for tech recruitment. Analyze the following code "
+        "commit/diff. Extract the technical skills demonstrated, soft skills (clarity, "
+        "attention to detail), improvement areas, and suggest courses. Return ONLY a "
+        "JSON object with keys: technicalSkills (string[]), softSkills (string[]), "
+        "improvementAreas (string[]), suggestedCourses (array of {title, platform, reason}), "
+        "complexityScore (0-100 integer).\n\nCode:\n" + (code_snippet or "")[:8000]
+    )
+    try:
+        resp = genai.GenerativeModel(
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        ).generate_content(prompt)
+        return _parse_json_from_response(resp)
+    except Exception as e:
+        print(f"Gemini analyze_commit failed: {e}")
+        # Fall back to a representative sample so the landing demo never breaks the page.
+        return {
+            "technicalSkills": ["Algorithms", "Refactoring"],
+            "softSkills": ["Communication"],
+            "improvementAreas": ["Edge-case coverage"],
+            "suggestedCourses": [
+                {"title": "Patterns of Software", "platform": "MIT OCW", "reason": "Strengthens architectural reasoning"}
+            ],
+            "complexityScore": 60,
+        }
+
+
 def analyze_repo(readme_text: str, files: list):
     body = {
         "task": "analyze_repo",
@@ -229,10 +258,83 @@ async def analyze_project_repo(repo_url: str):
 
 
 async def analyze_user_repository(repo_url: str):
-    # This is similar to analyze_repo_url but for user profile specific data
-    # ... (keeping the implementation concise or reusing the logic if possible,
-    # but the prompt structure was different in the original file.
-    # I'll restore the original implementation for safety.)
+    """Analyze a single user repo for skills/languages/frameworks.
+
+    We previously used Google ADK + the GitHub-Copilot MCP toolset here, but
+    when MCP returns 401 (or any sub-task fails) anyio leaks a TaskGroup
+    cancel-scope across tasks, which kills the FastAPI request with
+    `RuntimeError: No response returned.` and isn't catchable with normal
+    `except Exception` since it's a BaseExceptionGroup.
+
+    Replaced with a direct GitHub public-API + Gemini call. No anyio tasks,
+    no MCP, no ADK. Same return shape.
+    """
+    import requests as _req
+
+    parts = repo_url.rstrip("/").split("/")
+    if len(parts) < 2:
+        return {
+            "url": repo_url, "name": repo_url, "commits_count": 0,
+            "contributions": "Invalid URL", "skills_detected": [],
+            "languages": [], "frameworks": [],
+            "last_analyzed": datetime.utcnow().isoformat() + "Z",
+            "analysis_summary": "Could not parse repo URL.",
+        }
+    owner, repo_name = parts[-2], parts[-1]
+
+    # GitHub public API — same headers/token logic as routers/github.py
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    gh_token = (os.getenv("GITHUB_TOKEN") or "").strip()
+    if gh_token:
+        headers["Authorization"] = f"token {gh_token}"
+
+    languages: list = []
+    readme_text = ""
+    try:
+        # Languages (small, fast)
+        lr = _req.get(f"https://api.github.com/repos/{owner}/{repo_name}/languages",
+                      headers=headers, timeout=8)
+        if lr.status_code == 200:
+            languages = list((lr.json() or {}).keys())
+        # README (best-effort)
+        rr = _req.get(f"https://api.github.com/repos/{owner}/{repo_name}/readme",
+                      headers={**headers, "Accept": "application/vnd.github.v3.raw"},
+                      timeout=8)
+        if rr.status_code == 200:
+            readme_text = rr.text[:5000]
+    except Exception as e:
+        print(f"[analyze_user_repository] GitHub fetch failed for {repo_url}: {e}")
+
+    # Now ask Gemini for skills/frameworks. analyze_repo() is sync and
+    # uses the simple genai.GenerativeModel API (no anyio, no ADK).
+    ai_summary = ""
+    skills: list = []
+    frameworks: list = []
+    try:
+        ai = analyze_repo(readme_text, [])
+        if isinstance(ai, dict):
+            skills = ai.get("required_skills") or ai.get("skills") or []
+            frameworks = ai.get("frameworks_or_libraries") or ai.get("frameworks") or []
+            ai_summary = ai.get("project_summary") or ai.get("summary") or ""
+    except Exception as e:
+        # Gemini may be 429, key invalid, etc. We don't fail the whole flow.
+        print(f"[analyze_user_repository] Gemini call skipped: {type(e).__name__}: {e}")
+
+    return {
+        "url": repo_url,
+        "name": repo_name,
+        "commits_count": 0,  # GitHub commits-count requires a per-repo API call we skip for speed
+        "contributions": ai_summary or f"Public repo {owner}/{repo_name}",
+        "skills_detected": skills,
+        "languages": languages,
+        "frameworks": frameworks,
+        "last_analyzed": datetime.utcnow().isoformat() + "Z",
+        "analysis_summary": ai_summary or f"Repository {owner}/{repo_name} with {len(languages)} languages.",
+    }
+
+
+async def _analyze_user_repository_via_adk_DEPRECATED(repo_url: str):
+    """Kept for reference — original ADK/MCP-based implementation. Do not call."""
 
     if "GOOGLE_API_KEY" not in os.environ:
         api_key = os.getenv("GEMINI_API_KEY")

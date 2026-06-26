@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel, Field
+from typing import Optional
 from ..agents.orchestrator import create_orchestrator_agent
 from .. import models, auth
+from ..limiter import limiter
 
 # Depending on ADK version, we might need a runner or session management here.
 # For simplicity, we'll instantiate and run the agent synchronously or via simple async wrapper if possible.
@@ -11,17 +13,22 @@ from google.adk.sessions import InMemorySessionService
 import uuid
 from types import SimpleNamespace
 
-router = APIRouter(prefix="/agent", tags=["Agent"])
+router = APIRouter(
+    prefix="/agent", tags=["Agent"], dependencies=[Depends(auth.get_current_user)]
+)
 
 
 class ChatRequest(BaseModel):
-    message: str
-    session_id: str = None
+    message: str = Field(..., min_length=1, max_length=4000)
+    session_id: Optional[str] = Field(None, max_length=128)
 
 
 @router.post("/chat")
+@limiter.limit("20/minute")
 async def chat_with_agent(
-    request: ChatRequest, current_user: models.User = Depends(auth.get_current_user)
+    request: Request,
+    chat_request: ChatRequest,
+    current_user: models.User = Depends(auth.get_current_user),
 ):
     try:
         # Pass the authenticated user's ID to the orchestrator
@@ -30,7 +37,7 @@ async def chat_with_agent(
         # Simple session management (in-memory for now)
         session_service = InMemorySessionService()
         # Use a session ID that persists or create a new one
-        session_id = request.session_id or f"session_{uuid.uuid4()}"
+        session_id = chat_request.session_id or f"session_{uuid.uuid4()}"
 
         # We can use the user's actual ID for the session user_id
         session_user_id = str(current_user.id)
@@ -46,7 +53,7 @@ async def chat_with_agent(
         # Construct message
         # ADK usually expects a specific message structure
         # We'll use the same duck-typing as in gemini_agent.py
-        part = SimpleNamespace(text=request.message)
+        part = SimpleNamespace(text=chat_request.message)
         msg = SimpleNamespace(role="user", parts=[part])
 
         response_text = ""

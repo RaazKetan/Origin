@@ -18,7 +18,7 @@ export const SkillGapAnalysis = ({ candidate, onClose }) => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:8000'}/skill-gap/analyze`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/skill-gap/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -158,7 +158,7 @@ export const SkillGapAnalysis = ({ candidate, onClose }) => {
           {step === 'analyzing' && (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">Analyzing Interview...</h3>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Agent is working on it...</h3>
               <p className="text-gray-600 text-center max-w-md">
                 Our AI is analyzing the transcript to identify skill gaps, strengths, and create a personalized learning roadmap
               </p>

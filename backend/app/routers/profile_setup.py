@@ -8,7 +8,8 @@ Handles user profile setup after registration, including:
 - Portfolio score calculation
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from ..limiter import limiter
 from sqlalchemy.orm import Session
 from .. import schemas, models, auth
 from ..database import get_db
@@ -16,55 +17,89 @@ from ..resume_parser import parse_resume
 
 from ..utils import embed_text
 import os
+import requests
 
 router = APIRouter(prefix="/profile-setup", tags=["Profile Setup"])
 
-# Create uploads directory if it doesn't exist
-UPLOAD_DIR = "uploads/resumes"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Uploads go to Vercel Blob in production (set BLOB_READ_WRITE_TOKEN). For
+# local dev we fall back to writing under UPLOAD_DIR. The Vercel platform
+# filesystem is read-only outside /tmp and not durable across invocations,
+# so production must use Blob.
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/tmp/uploads/resumes")
+USE_VERCEL_BLOB = bool(os.getenv("BLOB_READ_WRITE_TOKEN"))
+if not USE_VERCEL_BLOB:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+MAX_RESUME_BYTES = 2 * 1024 * 1024  # 2 MB
+PDF_MAGIC = b"%PDF-"
 
 
 @router.get("/check-username")
-async def check_username(username: str, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def check_username(request: Request, username: str, db: Session = Depends(get_db)):
     """Check if a username is available"""
     existing = db.query(models.User).filter(models.User.username == username).first()
     return {"available": existing is None}
 
 
 @router.post("/upload-resume", response_model=schemas.ResumeParseResponse)
+@limiter.limit("5/minute")
 async def upload_resume(
+    request: Request,
     file: UploadFile = File(...),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Upload and parse resume file.
-    Returns extracted data for user to review and edit.
+    Upload and parse a PDF resume. Max 2 MB.
     """
-    # Validate file type
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    filename_lower = file.filename.lower()
-    if not (filename_lower.endswith(".pdf") or filename_lower.endswith(".docx")):
-        raise HTTPException(
-            status_code=400, detail="Only PDF and DOCX files are supported"
-        )
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    # Reject by declared content-type early when possible.
+    if file.content_type and file.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     try:
-        # Read file content
         file_content = await file.read()
 
         if len(file_content) == 0:
             raise HTTPException(status_code=400, detail="File is empty")
 
-        # Save file
-        file_path = os.path.join(UPLOAD_DIR, f"{current_user.id}_{file.filename}")
-        with open(file_path, "wb") as f:
-            f.write(file_content)
+        if len(file_content) > MAX_RESUME_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max size is {MAX_RESUME_BYTES // (1024 * 1024)} MB.",
+            )
 
-        # Update user's resume_url
-        current_user.resume_url = file_path
+        # Magic-byte check: real PDFs start with "%PDF-". Stops renamed
+        # executables / arbitrary uploads from reaching the parser.
+        if not file_content.startswith(PDF_MAGIC):
+            raise HTTPException(
+                status_code=400, detail="File is not a valid PDF document"
+            )
+
+        # Persist the file. Production = Vercel Blob (durable, public URL).
+        # Dev fallback = local disk under UPLOAD_DIR.
+        if USE_VERCEL_BLOB:
+            import vercel_blob
+
+            blob_path = f"resumes/{current_user.id}_{file.filename}"
+            blob_result = vercel_blob.put(
+                blob_path,
+                file_content,
+                {"access": "public", "addRandomSuffix": "true"},
+            )
+            current_user.resume_url = blob_result["url"]
+        else:
+            file_path = os.path.join(UPLOAD_DIR, f"{current_user.id}_{file.filename}")
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+            current_user.resume_url = file_path
         db.commit()
 
         # Parse resume
@@ -72,6 +107,10 @@ async def upload_resume(
 
         return schemas.ResumeParseResponse(**parsed_data)
 
+    except HTTPException:
+        # Already a typed HTTP error (e.g. 413 oversize, 400 bad type) —
+        # let it propagate instead of being masked as a 500 below.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -86,37 +125,85 @@ async def upload_resume(
 
 
 @router.post("/complete-profile", response_model=schemas.UserResponse)
+@limiter.limit("5/minute")
 async def complete_profile(
+    request: Request,
     data: schemas.ProfileSetupRequest,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Complete user profile setup.
-    Requires 1-5 GitHub repos for analysis.
+    Takes a GitHub profile URL, auto-fetches top 5 repos for analysis.
     Calculates portfolio score and ranking.
     Sets profile_completed = True.
     """
-    # Validate GitHub repos (1-5 required)
-    if not data.github_repos or len(data.github_repos) < 1:
-        raise HTTPException(
-            status_code=400, detail="At least 1 GitHub repository is required"
-        )
+    # If the frontend's Connect-GitHub flow gave us explicit repos, use those.
+    # Otherwise fall back to extracting top-5 from the profile URL (legacy flow).
+    github_repos_to_analyze: list[str] = []
+    if data.selected_repos:
+        # Cap at 5, dedupe, and only accept github.com URLs.
+        seen = set()
+        for url in data.selected_repos:
+            if not url or "github.com" not in url:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            github_repos_to_analyze.append(url)
+            if len(github_repos_to_analyze) >= 5:
+                break
+    elif data.github_profile_url:
+        try:
+            username = data.github_profile_url.rstrip("/").split("/")[-1]
+            response = requests.get(
+                f"https://api.github.com/users/{username}/repos?sort=updated&per_page=100",
+                timeout=10,
+                headers={"Accept": "application/vnd.github.v3+json"},
+            )
+            if response.status_code == 200:
+                repos = response.json()
+                sorted_repos = sorted(
+                    repos,
+                    key=lambda x: (
+                        x.get("stargazers_count", 0),
+                        x.get("updated_at", ""),
+                    ),
+                    reverse=True,
+                )
+                github_repos_to_analyze = [
+                    r["html_url"] for r in sorted_repos[:5]
+                ]
+            else:
+                print(
+                    f"Failed to fetch repos for {username}. Status: {response.status_code}"
+                )
+        except Exception as e:
+            print(f"Error fetching GitHub repos: {e}")
 
-    if len(data.github_repos) > 5:
-        raise HTTPException(
-            status_code=400, detail="Maximum 5 GitHub repositories allowed"
-        )
+    # Default to passing empty array to background job if fetching fails,
+    # or handle it gracefully. The user can still proceed.
 
     try:
-        # Start background job for repository analysis
+        # Start background job for repository analysis. AI failures here
+        # must NOT 500 the whole request — the user's profile is still
+        # valid; we just won't have the AI analysis until they retry.
         from ..background_jobs import start_background_job
 
-        print(
-            f"Starting background analysis for {len(data.github_repos)} repositories..."
-        )
-        job_id = start_background_job(current_user.id, data.github_repos)
-        print(f"Background job {job_id} started for user {current_user.id}")
+        if github_repos_to_analyze:
+            print(
+                f"Starting inline analysis for {len(github_repos_to_analyze)} repositories..."
+            )
+            try:
+                job_id = await start_background_job(current_user.id, github_repos_to_analyze)
+                print(f"Inline job {job_id} completed for user {current_user.id}")
+            except BaseException as e:
+                # BaseException so we also catch BaseExceptionGroup from
+                # anyio task groups (Google ADK / MCP toolset). Without
+                # this the request dies with "No response returned."
+                print(f"[complete-profile] inline analysis skipped: {type(e).__name__}: {e}")
+                if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                    raise
 
         # Update basic profile information immediately
         current_user.profile_completed = True
@@ -126,12 +213,39 @@ async def complete_profile(
         current_user.college_gpa = data.college_gpa
         current_user.college_years = data.college_years
         current_user.certifications = data.certifications or []
+        current_user.github_profile_url = data.github_profile_url
 
         # Add manually entered skills
         current_user.skills = data.skills or []
 
         # Store GitHub repos (will be analyzed in background)
-        current_user.github_selected_repos = [{"url": url} for url in data.github_repos]
+        current_user.github_selected_repos = [
+            {"url": url} for url in github_repos_to_analyze
+        ]
+
+        # Fetch real GitHub contribution grid (best-effort). Uses the user's
+        # own GitHub OAuth token when available — preserves rate limit at scale.
+        # Cache for 6h to avoid hammering GitHub if the user resubmits the form.
+        gh_username = None
+        if data.github_profile_url:
+            gh_username = data.github_profile_url.rstrip("/").split("/")[-1] or None
+        if gh_username:
+            from datetime import datetime, timedelta, timezone
+            from ..github_data import fetch_contribution_grid
+
+            now = datetime.now(timezone.utc)
+            stale = (
+                not current_user.contribution_fetched_at
+                or current_user.contribution_fetched_at < (now - timedelta(hours=6))
+            )
+            if stale:
+                contrib = fetch_contribution_grid(
+                    gh_username, user_token=current_user.github_access_token
+                )
+                if contrib:
+                    current_user.contribution_grid = contrib["grid"]
+                    current_user.contributions_total = contrib["total"]
+                    current_user.contribution_fetched_at = now
 
         # Set initial portfolio score (will be updated after analysis)
         current_user.portfolio_score = 50  # Default score
