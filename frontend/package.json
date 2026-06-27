@@ -12,9 +12,11 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "lucide-react": "^0.562.0",
+    "motion": "^12.42.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-github-calendar": "^5.0.6",
+    "rough-notation": "^0.5.1",
     "tailwindcss": "^4.1.14"
   },
   "devDependencies": {

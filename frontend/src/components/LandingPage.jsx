@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import './LandingPage.css';
+import { Highlighter } from './magicui/highlighter';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -303,7 +304,9 @@ export const LandingPage = ({ onLogin, onRegister, isLoading }) => {
           <div className="pipe-grid">
             <div className="pipe-head">
               <span className="k">// HOW IT WORKS</span>
-              <h2>From commit history to a matched offer — verified end to end.</h2>
+              <h2>
+                From commit history to a <Highlighter action="highlight" color="oklch(0.86 0.19 142 / 0.35)" isView>matched offer</Highlighter> - <Highlighter action="underline" color="var(--color-origin-acc)" isView>verified end to end</Highlighter>.
+              </h2>
             </div>
             <div className="flow">
               <div className="node">
