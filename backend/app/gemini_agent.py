@@ -6,16 +6,15 @@ from types import SimpleNamespace
 from datetime import datetime
 from functools import partial
 
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 # Import ADK components for the legacy/existing repo analysis functions
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
 from .agents.github import create_github_agent
+from .llm import generate
 
 load_dotenv()
-genai.configure(api_key=(os.getenv("GEMINI_API_KEY") or "").strip())
 
 SYSTEM_PROMPT = """
 Follow the structured schemas based on the input `task`.
@@ -42,32 +41,30 @@ For task "semantic_search":
 """
 
 
-def _parse_json_from_response(resp):
-    text = None
-    if getattr(resp, "text", None):
-        text = resp.text
-    else:
-        try:
-            cand = resp.candidates[0]
-            parts = getattr(cand.content, "parts", []) or []
-            for p in parts:
-                t = getattr(p, "text", None)
-                if t:
-                    text = t
-                    break
-        except Exception as e:
-            print(f"Failed to access response candidates: {e}")
+def _parse_json_from_response(text_or_resp):
+    """Accept either a raw text string (new SDK helper output) or a legacy
+    response object with .text/.candidates. Returns parsed JSON dict."""
+    text = text_or_resp if isinstance(text_or_resp, str) else None
+    if text is None:
+        if getattr(text_or_resp, "text", None):
+            text = text_or_resp.text
+        else:
+            try:
+                cand = text_or_resp.candidates[0]
+                for p in getattr(cand.content, "parts", []) or []:
+                    if getattr(p, "text", None):
+                        text = p.text
+                        break
+            except Exception as e:
+                print(f"Failed to access response candidates: {e}")
 
     if text:
         try:
-            clean_text = text.strip()
-            if clean_text.startswith("```json"):
-                clean_text = clean_text[7:]
-            elif clean_text.startswith("```"):
-                clean_text = clean_text[3:]
-            if clean_text.endswith("```"):
-                clean_text = clean_text[:-3]
-            return json.loads(clean_text.strip())
+            clean = text.strip()
+            if clean.startswith("```json"): clean = clean[7:]
+            elif clean.startswith("```"):    clean = clean[3:]
+            if clean.endswith("```"):       clean = clean[:-3]
+            return json.loads(clean.strip())
         except Exception as e:
             print(f"Failed to parse text as JSON: {e}")
             print(f"Text content: {text[:200]}...")
@@ -78,10 +75,11 @@ def _parse_json_from_response(resp):
 def refine_pitch(raw_idea: str):
     try:
         body = {"task": "refine_pitch", "raw_idea": raw_idea or ""}
-        resp = genai.GenerativeModel(
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        ).generate_content([SYSTEM_PROMPT, json.dumps(body, ensure_ascii=False)])
-        return _parse_json_from_response(resp)
+        text = generate(
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            [SYSTEM_PROMPT, json.dumps(body, ensure_ascii=False)],
+        )
+        return _parse_json_from_response(text)
     except Exception as e:
         print(f"Gemini refine_pitch failed: {e}")
         return {
@@ -103,10 +101,8 @@ def analyze_commit(code_snippet: str) -> dict:
         "complexityScore (0-100 integer).\n\nCode:\n" + (code_snippet or "")[:8000]
     )
     try:
-        resp = genai.GenerativeModel(
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        ).generate_content(prompt)
-        return _parse_json_from_response(resp)
+        text = generate(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), prompt)
+        return _parse_json_from_response(text)
     except Exception as e:
         print(f"Gemini analyze_commit failed: {e}")
         # Fall back to a representative sample so the landing demo never breaks the page.
@@ -128,10 +124,11 @@ def analyze_repo(readme_text: str, files: list):
         "readme": (readme_text or "")[:5000],
         "files": files[:5] if files else [],
     }
-    resp = genai.GenerativeModel(
-        os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    ).generate_content([SYSTEM_PROMPT, json.dumps(body, ensure_ascii=False)])
-    return _parse_json_from_response(resp)
+    text = generate(
+        os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        [SYSTEM_PROMPT, json.dumps(body, ensure_ascii=False)],
+    )
+    return _parse_json_from_response(text)
 
 
 async def analyze_repo_url(repo_url: str, readme_text: str = None, files: list = None):
@@ -454,12 +451,8 @@ def analyze_user_repos(username: str, repos_meta: list):
         }}
         """
 
-        resp = genai.GenerativeModel(
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        ).generate_content(prompt)
-
-        result = _parse_json_from_response(resp)
-        return result
+        text = generate(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), prompt)
+        return _parse_json_from_response(text)
 
     except Exception as e:
         print(f"Error analyzing user repos for {username}: {e}")

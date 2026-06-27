@@ -6,7 +6,7 @@ pgvector
 alembic
 python-dotenv
 requests
-google-generativeai
+google-genai
 httpx
 python-jose[cryptography]
 passlib[bcrypt]

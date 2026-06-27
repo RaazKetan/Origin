@@ -1,22 +1,15 @@
-import os
-import google.generativeai as genai
 from dotenv import load_dotenv
 
+from .llm import embed
+
 load_dotenv()
-genai.configure(api_key=(os.getenv("GEMINI_API_KEY") or "").strip())
 
 
-def embed_text(text: str, task_type: str = "retrieval_document"):
-    """
-    Generate embedding for the given text using Gemini.
-    Use task_type="retrieval_query" for search queries,
-    and task_type="retrieval_document" for stored documents.
-    """
+def embed_text(text: str, task_type: str = "RETRIEVAL_DOCUMENT"):
+    """Generate embedding for the given text. Use task_type='RETRIEVAL_QUERY'
+    for search queries, 'RETRIEVAL_DOCUMENT' for stored documents."""
     try:
-        model = "gemini-embedding-001"
-        return genai.embed_content(model=model, content=text, task_type=task_type)[
-            "embedding"
-        ]
+        return embed(text, model="gemini-embedding-001", task_type=task_type.upper())
     except Exception as e:
         print(f"Error generating embedding: {e}")
         return None

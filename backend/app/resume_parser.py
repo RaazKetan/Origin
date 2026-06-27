@@ -8,13 +8,13 @@ including GitHub repositories, awards, skills, education, and certifications.
 import os
 import io
 import json
-import google.generativeai as genai
 from typing import Dict
 from dotenv import load_dotenv
 import PyPDF2
 
+from .llm import generate
+
 load_dotenv()
-genai.configure(api_key=(os.getenv("GEMINI_API_KEY") or "").strip())
 
 RESUME_PARSE_PROMPT = """
 You are a resume parser. Extract structured information from the following resume text.
@@ -97,12 +97,9 @@ async def parse_resume(file_content: bytes, filename: str) -> Dict:
             resume_text=resume_text[:10000]
         )  # Limit to 10k chars
 
-        response = genai.GenerativeModel(
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        ).generate_content(prompt)
-
-        # Parse JSON response
-        response_text = response.text.strip()
+        response_text = generate(
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), prompt
+        ).strip()
 
         # Clean up response (remove markdown code blocks if present)
         if response_text.startswith("```json"):
