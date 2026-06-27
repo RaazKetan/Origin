@@ -6,7 +6,7 @@ const MAX_SELECTED_REPOS = 5;
 
 // `-o-` logo from the design — centered ring + line passing through both sides.
 const OriginMark = ({ size = 18 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#141414" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--color-origin-bg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3.5 12 H8.6" />
     <circle cx="12" cy="12" r="3.3" />
     <path d="M15.4 12 H20.5" />

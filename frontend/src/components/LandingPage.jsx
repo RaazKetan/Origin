@@ -71,7 +71,7 @@ const OriginMark = ({ size = 18 }) => (
     height={size}
     viewBox="0 0 24 24"
     fill="none"
-    stroke="#141414"
+    stroke="var(--color-origin-bg)"
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
