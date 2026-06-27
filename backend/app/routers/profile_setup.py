@@ -83,23 +83,12 @@ async def upload_resume(
                 status_code=400, detail="File is not a valid PDF document"
             )
 
-        # Persist the file. Production = Vercel Blob (durable, public URL).
-        # Dev fallback = local disk under UPLOAD_DIR.
-        if USE_VERCEL_BLOB:
-            import vercel_blob
-
-            blob_path = f"resumes/{current_user.id}_{file.filename}"
-            blob_result = vercel_blob.put(
-                blob_path,
-                file_content,
-                {"access": "public", "addRandomSuffix": "true"},
-            )
-            current_user.resume_url = blob_result["url"]
-        else:
-            file_path = os.path.join(UPLOAD_DIR, f"{current_user.id}_{file.filename}")
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-            current_user.resume_url = file_path
+        # Persist to Supabase Storage (private bucket, PDF-only, 2 MB cap
+        # enforced bucket-side too). Falls back to local disk in dev.
+        from ..storage import put_resume
+        current_user.resume_url = put_resume(
+            current_user.id, file.filename, file_content
+        )
         db.commit()
 
         # Parse resume
@@ -122,6 +111,22 @@ async def upload_resume(
             status_code=500,
             detail="Failed to process resume. Please try again or use manual entry.",
         )
+
+
+@router.get("/resume-url")
+@limiter.limit("30/minute")
+async def get_resume_url(
+    request: Request,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Mint a short-lived signed URL for the user's own resume."""
+    if not current_user.resume_url:
+        raise HTTPException(status_code=404, detail="No resume on file")
+    from ..storage import signed_url
+    url = signed_url(current_user.resume_url, expires_in=3600)
+    if not url:
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    return {"url": url, "expires_in": 3600}
 
 
 @router.post("/complete-profile", response_model=schemas.UserResponse)

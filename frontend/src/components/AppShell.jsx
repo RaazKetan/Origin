@@ -3,7 +3,7 @@ import {
   Compass, MessageSquare, Briefcase, FileText, User as UserIcon,
   Activity, Bookmark, Search, Menu, LogOut, GitBranch,
 } from 'lucide-react';
-import { AnimatedThemeToggler } from './magicui/animated-theme-toggler';
+// Theme toggle now mounted globally in App.jsx (fixed top-right on every page).
 
 const OriginMark = ({ size = 17 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--color-origin-bg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -195,15 +195,6 @@ export const AppShell = ({
             </div>
           )}
           <div className="flex-1" />
-          {toggleTheme && (
-            <AnimatedThemeToggler
-              theme={isDarkMode ? 'dark' : 'light'}
-              onThemeChange={() => toggleTheme()}
-              variant="circle"
-              fromCenter
-              className="w-9 h-9 grid place-items-center rounded-md text-origin-ink-2 bg-origin-bg-soft border border-origin-line hover:bg-origin-surface hover:text-origin-ink transition-colors cursor-pointer [&>svg]:w-[18px] [&>svg]:h-[18px]"
-            />
-          )}
           {actions}
         </header>
 

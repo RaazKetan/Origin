@@ -15,6 +15,7 @@ import { ProfileSetup } from './components/ProfileSetup';
 import { Jobs } from './components/Jobs';
 import { ApplicationsTracker } from './components/ApplicationsTracker';
 import { RepoReviews } from './components/RepoReviews';
+import { AnimatedThemeToggler } from './components/magicui/animated-theme-toggler';
 import { OAuthSetup } from './components/OAuthSetup';
 import { ResetPassword } from './components/ResetPassword';
 // GlobalAnalysisPopup retired — analysis runs inline during complete-profile.
@@ -425,11 +426,27 @@ export function App() {
 
 
 
+  // Global theme toggle — fixed top-right, visible on every page.
+  // Pre-auth + profile-setup pages don't have AppShell, so this is the only
+  // toggle they see. On the dashboard, AppShell's topbar toggle still appears,
+  // but this fixed widget is above it. ponytail: one source, every page.
+  const themeToggle = (
+    <div className="fixed top-4 right-4 z-50">
+      <AnimatedThemeToggler
+        theme={isDarkMode ? 'dark' : 'light'}
+        onThemeChange={() => toggleTheme()}
+        variant="circle"
+        fromCenter
+        className="w-9 h-9 grid place-items-center rounded-md text-origin-ink-2 bg-origin-bg-soft/80 backdrop-blur border border-origin-line hover:bg-origin-surface hover:text-origin-ink transition-colors cursor-pointer [&>svg]:w-[18px] [&>svg]:h-[18px]"
+      />
+    </div>
+  );
+
   // Password-reset deep link — handled before anything else so the user
   // doesn't have to log in to use the link from their email.
   if (resetPasswordToken && !currentUser) {
     return (
-      <ResetPassword
+      <>{themeToggle}<ResetPassword
         token={resetPasswordToken}
         onSuccess={async () => {
           setResetPasswordToken(null);
@@ -437,14 +454,14 @@ export function App() {
           const complete = await checkProfileCompletion();
           setView(complete ? "discover" : "profileSetup");
         }}
-      />
+      /></>
     );
   }
 
   if (!currentUser) {
     if (view === "oauthSetup" && setupToken) {
       return (
-        <OAuthSetup 
+        <>{themeToggle}<OAuthSetup
           setupToken={setupToken}
           onComplete={async (token) => {
             localStorage.setItem("token", token);
@@ -452,28 +469,28 @@ export function App() {
             await fetchCurrentUser();
             setView("profileSetup");
           }}
-        />
+        /></>
       );
     }
     return (
-      <LandingPage 
+      <>{themeToggle}<LandingPage
         onLogin={handleLogin}
         onRegister={handleRegister}
         isLoading={isLoading}
-      />
+      /></>
     );
   }
 
   // Show profile setup if not completed
   if (view === "profileSetup") {
     return (
-      <ProfileSetup 
+      <>{themeToggle}<ProfileSetup
         onComplete={async () => {
           await fetchCurrentUser();
           setView("discover");
         }}
         isDarkMode={isDarkMode}
-      />
+      /></>
     );
   }
 
