@@ -260,10 +260,10 @@ export const LandingPage = ({ onLogin, onRegister, isLoading }) => {
           <div className="proof">
             <div className="card">
               <div className="card-top">
-                <div className="avatar">AR</div>
+                <div className="avatar">KR</div>
                 <div className="who">
-                  <div className="name">Alex Rivera <span className="verified">✓ VERIFIED</span></div>
-                  <div className="handle">@alexrivera · 6y active</div>
+                  <div className="name">Ketan Raj <span className="verified">✓ VERIFIED</span></div>
+                  <div className="handle">@21ketanraaz · founder</div>
                 </div>
                 <div className="score">
                   <div className="n">94<s>/100</s></div>
@@ -285,10 +285,10 @@ export const LandingPage = ({ onLogin, onRegister, isLoading }) => {
               </div>
 
               <div className="skills">
-                <div className="skill"><div className="s-name">TypeScript <small>/ 8 repos</small></div><div className="bar"><i style={{ width: '96%' }} /></div><div className="pct">96</div></div>
-                <div className="skill"><div className="s-name">Rust <small>/ 4 repos</small></div><div className="bar"><i style={{ width: '88%' }} /></div><div className="pct">88</div></div>
-                <div className="skill"><div className="s-name">Distributed Systems</div><div className="bar"><i style={{ width: '91%' }} /></div><div className="pct">91</div></div>
-                <div className="skill"><div className="s-name">API Design</div><div className="bar"><i style={{ width: '84%' }} /></div><div className="pct">84</div></div>
+                <div className="skill"><div className="s-name">Python <small>/ 7 repos</small></div><div className="bar"><i style={{ width: '95%' }} /></div><div className="pct">95</div></div>
+                <div className="skill"><div className="s-name">React <small>/ 5 repos</small></div><div className="bar"><i style={{ width: '90%' }} /></div><div className="pct">90</div></div>
+                <div className="skill"><div className="s-name">AI Agents</div><div className="bar"><i style={{ width: '92%' }} /></div><div className="pct">92</div></div>
+                <div className="skill"><div className="s-name">FastAPI</div><div className="bar"><i style={{ width: '88%' }} /></div><div className="pct">88</div></div>
               </div>
 
               <div className="card-foot">

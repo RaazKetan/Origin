@@ -325,9 +325,7 @@
 @property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 .origin-landing .card {
   position: relative;
-  background:
-    radial-gradient(120% 80% at 80% 0%, oklch(0.24 0.02 150 / 0.5), transparent 55%),
-    var(--bg-soft);
+  background: var(--bg-soft);
   border: 1px solid var(--line);
   border-radius: 17px;
   padding: 22px;
@@ -344,7 +342,7 @@
   height: 46px;
   border-radius: 11px;
   flex: none;
-  background: linear-gradient(135deg, var(--surface-2), var(--surface));
+  background: var(--surface);
   border: 1px solid var(--line-2);
   display: grid;
   place-items: center;
@@ -499,7 +497,7 @@
   display: block;
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--acc-dim), var(--acc));
+  background: var(--acc);
 }
 .origin-landing .skill .pct {
   font-family: var(--mono);
