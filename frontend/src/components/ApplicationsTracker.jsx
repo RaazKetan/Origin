@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Briefcase, Search, MapPin, ArrowRight, Loader2 } from 'lucide-react';
+import { API_BASE } from '../lib/api';
+import { initials } from '../lib/format';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const initials = (s = '') => s.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || 'C';
 
 const STATUS_META = {
   applied:   { label: 'Applied',   step: 1, tone: 'origin-ink-3' },

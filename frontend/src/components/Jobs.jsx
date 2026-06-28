@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Filter, MapPin, Check, Briefcase, ArrowRight, Loader2, BookmarkPlus, X as XIcon,
 } from 'lucide-react';
+import { API_BASE } from '../lib/api';
+import { initials } from '../lib/format';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const initials = (s = '') => s.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || 'C';
 
 // ============================ JobCard ============================
 

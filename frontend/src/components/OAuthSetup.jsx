@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Mail, User as UserIcon, AtSign, Check, ArrowRight, Github, Sparkles } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // Decode setup_token payload (JWT) — read-only display, no signature verify.
 // The backend verifies the token when we submit.

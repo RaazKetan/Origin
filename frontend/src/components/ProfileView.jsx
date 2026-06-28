@@ -4,12 +4,12 @@ import {
   Star as StarIcon, GitFork, Loader2,
 } from 'lucide-react';
 import { GitHubCalendar } from 'react-github-calendar';
+import { API_BASE } from '../lib/api';
+import { initials, langColor } from '../lib/format';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // =========================== small helpers ===========================
 
-const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('') || 'U';
 
 // "Joined N months ago" / "Joined Jun 2026". We don't say "0y active" — it's
 // nonsense for any account younger than a year and reads as broken.
@@ -32,17 +32,6 @@ const repoMetaFromUrl = (url) => {
   return { owner: m[1], name: m[2] };
 };
 
-// language → color (matches the design's amber/sky/acc-2/ink-4 palette)
-const langColor = (lang) => {
-  const k = String(lang || '').toLowerCase();
-  if (/(rust|java)/.test(k))                        return 'oklch(0.82 0.15 78)';   // amber
-  if (/(type ?script|javascript|tsx|jsx)/.test(k))  return 'oklch(0.78 0.11 235)';  // sky
-  if (/(python|django|flask)/.test(k))              return 'oklch(0.72 0.16 144)';  // acc-2
-  if (/(go|golang)/.test(k))                        return 'oklch(0.72 0.16 144)';  // acc-2
-  if (/(c\+\+|cpp|c#|csharp)/.test(k))              return 'oklch(0.78 0.11 235)';
-  if (/(ruby)/.test(k))                             return 'oklch(0.7 0.18 25)';
-  return 'oklch(0.48 0.01 250)';                                                    // ink-4 / other
-};
 
 // Origin design palette for the contribution heatmap.
 const CALENDAR_THEME = {

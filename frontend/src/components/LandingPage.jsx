@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import './LandingPage.css';
 import { Highlighter } from './magicui/highlighter';
+import { API_BASE } from '../lib/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const SAMPLE_CODE = `commit 8f3a12b
 Author: DevUser <dev@origin.ai>
