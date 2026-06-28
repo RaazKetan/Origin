@@ -1,38 +1,21 @@
-"""
-Profile Setup Router
+"""Profile setup: resume upload, manual entry, GitHub link, scoring."""
 
-Handles user profile setup after registration, including:
-- Resume upload and parsing
-- Manual profile entry
-- GitHub repository analysis
-- Portfolio score calculation
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
-from ..limiter import limiter
-from sqlalchemy.orm import Session
-from .. import schemas, models, auth
-from ..database import get_db
-from ..resume_parser import parse_resume
-
-from ..utils import embed_text
 import os
 import requests
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from sqlalchemy.orm import Session
+
+from .. import schemas, models, auth
+from ..core.config import settings
+from ..database import get_db
+from ..limiter import limiter
+from ..resume_parser import parse_resume
+from ..utils import embed_text
 
 router = APIRouter(prefix="/profile-setup", tags=["Profile Setup"])
 
 # Uploads go to Vercel Blob in production (set BLOB_READ_WRITE_TOKEN). For
-# local dev we fall back to writing under UPLOAD_DIR. The Vercel platform
-# filesystem is read-only outside /tmp and not durable across invocations,
-# so production must use Blob.
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/tmp/uploads/resumes")
-USE_VERCEL_BLOB = bool(os.getenv("BLOB_READ_WRITE_TOKEN"))
-if not USE_VERCEL_BLOB:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-
-MAX_RESUME_BYTES = 2 * 1024 * 1024  # 2 MB
-PDF_MAGIC = b"%PDF-"
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 
 @router.get("/check-username")
@@ -70,15 +53,15 @@ async def upload_resume(
         if len(file_content) == 0:
             raise HTTPException(status_code=400, detail="File is empty")
 
-        if len(file_content) > MAX_RESUME_BYTES:
+        if len(file_content) > settings.MAX_RESUME_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Max size is {MAX_RESUME_BYTES // (1024 * 1024)} MB.",
+                detail=f"File too large. Max size is {settings.MAX_RESUME_BYTES // (1024 * 1024)} MB.",
             )
 
         # Magic-byte check: real PDFs start with "%PDF-". Stops renamed
         # executables / arbitrary uploads from reaching the parser.
-        if not file_content.startswith(PDF_MAGIC):
+        if not file_content.startswith(settings.PDF_MAGIC_BYTES):
             raise HTTPException(
                 status_code=400, detail="File is not a valid PDF document"
             )
