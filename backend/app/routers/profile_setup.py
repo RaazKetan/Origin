@@ -11,6 +11,7 @@ from app.database import get_db
 from app.limiter import limiter
 from app.services.resume import parse_resume
 from app.services.embeddings import embed_text
+from app.services.scoring import recompute_portfolio
 
 router = APIRouter(prefix="/profile-setup", tags=["Profile Setup"])
 
@@ -235,19 +236,16 @@ async def complete_profile(
                     current_user.contributions_total = contrib["total"]
                     current_user.contribution_fetched_at = now
 
-        # Set initial portfolio score (will be updated after analysis)
-        current_user.portfolio_score = 50  # Default score
-        current_user.portfolio_rank = "Intermediate"  # Default rank
-
-        # Calculate user embedding with current data
         try:
             vec_text = f"{current_user.name} {current_user.bio} {' '.join(current_user.skills or [])}"
             current_user.user_vector = embed_text(vec_text)
         except Exception as e:
             print(f"Error generating user embedding: {e}")
 
-        # Set activity score
-        current_user.activity_score = 50  # Default, will be updated after analysis
+        # Score from real signals (skills, repos, commits, agent analysis).
+        # Recomputed again when the analysis job finishes — never sticks at a
+        # placeholder.
+        recompute_portfolio(current_user)
 
         db.commit()
         db.refresh(current_user)
