@@ -2,7 +2,9 @@ from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel, Field
 from typing import List
 from app import auth
-from app.gemini_agent import analyze_commit, analyze_repo, refine_pitch
+from app.services.commit_analysis import analyze_commit
+from app.services.repo_analysis import analyze_repo
+from app.services.pitch import refine_pitch
 from app.limiter import limiter
 
 router = APIRouter(

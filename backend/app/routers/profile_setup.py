@@ -9,8 +9,8 @@ from app import schemas, models, auth
 from app.core import constants
 from app.database import get_db
 from app.limiter import limiter
-from app.resume_parser import parse_resume
-from app.utils import embed_text
+from app.services.resume import parse_resume
+from app.services.embeddings import embed_text
 
 router = APIRouter(prefix="/profile-setup", tags=["Profile Setup"])
 
@@ -68,7 +68,7 @@ async def upload_resume(
 
         # Persist to Supabase Storage (private bucket, PDF-only, 2 MB cap
         # enforced bucket-side too). Falls back to local disk in dev.
-        from app.storage import put_resume
+        from app.services.storage import put_resume
         current_user.resume_url = put_resume(
             current_user.id, file.filename, file_content
         )
@@ -105,7 +105,7 @@ async def get_resume_url(
     """Mint a short-lived signed URL for the user's own resume."""
     if not current_user.resume_url:
         raise HTTPException(status_code=404, detail="No resume on file")
-    from app.storage import signed_url
+    from app.services.storage import signed_url
     url = signed_url(current_user.resume_url, expires_in=3600)
     if not url:
         raise HTTPException(status_code=503, detail="Storage not configured")
@@ -219,7 +219,7 @@ async def complete_profile(
             gh_username = data.github_profile_url.rstrip("/").split("/")[-1] or None
         if gh_username:
             from datetime import datetime, timedelta, timezone
-            from app.github_data import fetch_contribution_grid
+            from app.services.github_api import fetch_contribution_grid
 
             now = datetime.now(timezone.utc)
             stale = (

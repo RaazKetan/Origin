@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from app import models, auth
 from app.database import get_db
-from app.utils import embed_text
+from app.services.embeddings import embed_text
 from app.limiter import limiter
 import math
 import os

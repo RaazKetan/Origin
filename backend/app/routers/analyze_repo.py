@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app import schemas, models, auth
 from app.database import get_db
-from app.gemini_agent import analyze_user_repository
+from app.services.repo_analysis import analyze_user_repository
 from app.limiter import limiter
 
 router = APIRouter(

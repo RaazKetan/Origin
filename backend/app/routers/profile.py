@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app import schemas, models, auth
 from app.database import get_db
-from app.gemini_agent import analyze_user_repos
-from app.utils import embed_text
+from app.services.repo_analysis import analyze_user_repos
+from app.services.embeddings import embed_text
 from app.limiter import limiter
 import requests
 

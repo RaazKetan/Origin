@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app import schemas, models, auth
 from app.database import get_db
-from app.gemini_agent import refine_pitch
-from app.utils import embed_text
+from app.services.pitch import refine_pitch
+from app.services.embeddings import embed_text
 from app.limiter import limiter
 import math
 
