@@ -15,9 +15,9 @@ from app.schemas import (
     ConnectionResponse,
 )
 from app.auth import get_current_user
-from app.utils import embed_text
+from app.services.embeddings import embed_text
 from app.background_jobs import trigger_job_matching
-from app.scoring import compute_visibility_score
+from app.services.scoring import compute_visibility_score
 from app.limiter import limiter
 
 router = APIRouter(

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app import schemas, crud, auth, models
 from app.database import get_db
-from app.utils import embed_text
+from app.services.embeddings import embed_text
 from app.limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["Users"])

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app import models, auth
-from app.utils import embed_text
+from app.services.embeddings import embed_text
 
 
 def seed_database():
