@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 # Import ADK components for the legacy/existing repo analysis functions
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
-from .agents.github import create_github_agent
-from .llm import generate
+from app.agents.github import create_github_agent
+from app.llm import generate
 
 load_dotenv()
 
@@ -250,10 +250,6 @@ async def analyze_repo_url(repo_url: str, readme_text: str = None, files: list =
         }
 
 
-async def analyze_project_repo(repo_url: str):
-    return await analyze_repo_url(repo_url)
-
-
 async def analyze_user_repository(repo_url: str):
     """Analyze a single user repo for skills/languages/frameworks.
 
@@ -328,96 +324,6 @@ async def analyze_user_repository(repo_url: str):
         "last_analyzed": datetime.utcnow().isoformat() + "Z",
         "analysis_summary": ai_summary or f"Repository {owner}/{repo_name} with {len(languages)} languages.",
     }
-
-
-async def _analyze_user_repository_via_adk_DEPRECATED(repo_url: str):
-    """Kept for reference — original ADK/MCP-based implementation. Do not call."""
-
-    if "GOOGLE_API_KEY" not in os.environ:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            os.environ["GOOGLE_API_KEY"] = api_key
-
-    try:
-        print(f"Analyzing user repository: {repo_url}")
-        agent = create_github_agent()
-        session_service = InMemorySessionService()
-        user_id = "user_repo_" + str(uuid.uuid4())[:8]
-        session_id = "session_" + str(uuid.uuid4())[:8]
-
-        await session_service.create_session(
-            app_name="agents", user_id=user_id, session_id=session_id
-        )
-
-        runner = Runner(app_name="agents", agent=agent, session_service=session_service)
-
-        try:
-            parts = repo_url.rstrip("/").split("/")
-            repo_name = parts[-1] if parts else "repository"
-
-            prompt = f"""
-            Analyze the GitHub repository at {repo_url} to understand the user's contributions and skills.
-            
-            Return a valid JSON object with this exact structure:
-            {{
-                "url": "{repo_url}",
-                "name": "{repo_name}",
-                "commits_count": <number>,
-                "contributions": "<brief description>",
-                "skills_detected": ["skill1"],
-                "languages": ["Python"],
-                "frameworks": ["React"],
-                "analysis_summary": "<summary>"
-            }}
-            Output JSON only.
-            """
-
-            part = SimpleNamespace(text=prompt)
-            msg = SimpleNamespace(role="user", parts=[part])
-            full_response_text = ""
-
-            async for event in runner.run_async(
-                user_id=user_id, session_id=session_id, new_message=msg
-            ):
-                if hasattr(event, "text") and event.text:
-                    full_response_text += event.text
-                elif hasattr(event, "content"):
-                    c = event.content
-                    if hasattr(c, "parts"):
-                        for p in c.parts:
-                            if hasattr(p, "text") and p.text:
-                                full_response_text += p.text
-
-            if full_response_text:
-                dummy_resp = SimpleNamespace(text=full_response_text)
-                result = _parse_json_from_response(dummy_resp)
-                if isinstance(result, dict):
-                    result.setdefault("url", repo_url)
-                    result.setdefault("name", repo_name)
-                    result["last_analyzed"] = datetime.utcnow().isoformat() + "Z"
-                return result
-            else:
-                raise Exception("No response from GitHub agent")
-
-        finally:
-            if hasattr(runner, "close"):
-                await runner.close()
-
-    except Exception as e:
-        print(f"Error analyzing user repository {repo_url}: {e}")
-        parts = repo_url.rstrip("/").split("/")
-        repo_name = parts[-1] if parts else "repository"
-        return {
-            "url": repo_url,
-            "name": repo_name,
-            "commits_count": 0,
-            "contributions": "Analysis failed",
-            "skills_detected": [],
-            "languages": [],
-            "frameworks": [],
-            "last_analyzed": datetime.utcnow().isoformat() + "Z",
-            "analysis_summary": f"Repository: {repo_url}. Analysis failed.",
-        }
 
 
 def analyze_user_repos(username: str, repos_meta: list):

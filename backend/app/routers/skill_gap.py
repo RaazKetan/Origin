@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from .. import models, auth
-from ..database import get_db
-from ..limiter import limiter
-import google.generativeai as genai
-import os
 import json
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app import models, auth
+from app.core import constants, secrets
+from app.database import get_db
+from app.limiter import limiter
+from app.llm import generate
 
 router = APIRouter(
     prefix="/skill-gap",
@@ -47,12 +49,8 @@ def analyze_interview_with_ai(
     Use Gemini AI to analyze interview transcript and generate skill gap analysis
     """
     try:
-        # Configure Gemini
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
+        if not secrets.GEMINI_API_KEY:
             raise Exception("No API key found")
-
-        genai.configure(api_key=api_key.strip())
 
         prompt = f"""
 Analyze this interview transcript for a {target_role} position.
@@ -145,11 +143,7 @@ IMPORTANT:
 - Output ONLY valid JSON, no additional text
 """
 
-        model = genai.GenerativeModel("gemini-2.5-pro")
-        response = model.generate_content(prompt)
-
-        # Parse response
-        text = response.text.strip()
+        text = generate(model=constants.GEMINI_PRO_MODEL, contents=prompt).strip()
 
         # Clean JSON markers
         if text.startswith("```json"):

@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-from .database import Base, is_postgres
+from app.database import Base, is_postgres
 
 
 def json_column():

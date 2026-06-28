@@ -1,8 +1,8 @@
 import os
 from google.adk.agents import Agent
-from .search import search_projects_tool
-from .resume import parse_resume_tool
-from .jobs import find_jobs_tool
+from app.agents.search import search_projects_tool
+from app.agents.resume import parse_resume_tool
+from app.agents.jobs import find_jobs_tool
 # We'll need to expose the GitHub capabilities too.
 # Assuming github.py has tools defined or we can wrap them.
 # For now, we'll focus on the requested 3 (+ github).

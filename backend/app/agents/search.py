@@ -1,11 +1,11 @@
 import os
 from google.adk.agents import Agent
-from ..utils import embed_text
+from app.utils import embed_text
 
 # We'll need a way to run DB queries.
 # For now, let's assume we can import database functions or use a direct connection.
 # Ideally, this should use the CRUD methods or similar.
-from ..database import SessionLocal
+from app.database import SessionLocal
 from sqlalchemy import text
 
 

@@ -7,10 +7,10 @@ and accepting/dismissing analyzed skills from background jobs.
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from .. import schemas, models, auth
-from ..database import get_db
-from ..background_jobs import job_queue, JobStatus
-from ..limiter import limiter
+from app import schemas, models, auth
+from app.database import get_db
+from app.background_jobs import job_queue, JobStatus
+from app.limiter import limiter
 
 router = APIRouter(
     prefix="/analysis", tags=["Analysis"], dependencies=[Depends(auth.get_current_user)]
@@ -116,7 +116,7 @@ async def accept_skills(
 
     # Update embedding if needed
     try:
-        from ..utils import embed_text
+        from app.utils import embed_text
 
         vec_text = f"{current_user.name} {current_user.bio} {' '.join(current_user.skills or [])} {' '.join(current_user.top_languages or [])}"
         current_user.user_vector = embed_text(vec_text)

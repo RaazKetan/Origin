@@ -12,7 +12,7 @@ from typing import Dict
 from dotenv import load_dotenv
 import PyPDF2
 
-from .llm import generate
+from app.llm import generate
 
 load_dotenv()
 

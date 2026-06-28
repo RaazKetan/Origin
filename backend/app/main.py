@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import os
 from dotenv import load_dotenv
-from .database import Base, engine
-from .routers import (
+from app.database import Base, engine
+from app.routers import (
     users,
     ai,
     auth,
@@ -24,7 +24,7 @@ from .routers import (
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from .limiter import limiter
+from app.limiter import limiter
 
 
 # Skip create_all when running on serverless against a pooled Postgres; the

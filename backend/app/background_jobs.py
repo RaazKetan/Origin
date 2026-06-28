@@ -12,11 +12,11 @@ from typing import Dict, List, Optional
 from enum import Enum
 import threading
 from sqlalchemy.orm import Session
-from .database import SessionLocal
-from .models import User, Job, JobMatch
-from .scoring import compute_final_match_score
-from .match_utlis import cosine_similarity
-from .utils import embed_text
+from app.database import SessionLocal
+from app.models import User, Job, JobMatch
+from app.scoring import compute_final_match_score
+from app.match_utils import cosine_similarity
+from app.utils import embed_text
 
 
 class JobStatus(str, Enum):
@@ -118,7 +118,7 @@ async def process_repository_analysis(job_id: str):
     Process repository analysis in the background.
     This function runs asynchronously and updates the job status.
     """
-    from .gemini_agent import analyze_user_repository
+    from app.gemini_agent import analyze_user_repository
 
     job = job_queue.get_job(job_id)
     if not job:

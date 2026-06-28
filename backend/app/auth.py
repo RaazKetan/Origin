@@ -1,31 +1,30 @@
+"""JWT issue/verify, password hashing, OAuth client registration, deps."""
+
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+
+from authlib.integrations.starlette_client import OAuth
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from . import models, schemas
-from .database import get_db
-from dotenv import load_dotenv
-import os
-from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 
-load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM") or "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+from app import models, schemas
+from app.core import constants, secrets
+from app.database import get_db
 
-# OAuth setup
-config_data = {
-    "GOOGLE_CLIENT_ID": os.getenv("GOOGLE_CLIENT_ID", ""),
-    "GOOGLE_CLIENT_SECRET": os.getenv("GOOGLE_CLIENT_SECRET", ""),
-    "GITHUB_CLIENT_ID": os.getenv("GITHUB_CLIENT_ID", ""),
-    "GITHUB_CLIENT_SECRET": os.getenv("GITHUB_CLIENT_SECRET", ""),
-}
-starlette_config = Config(environ=config_data)
-oauth = OAuth(starlette_config)
+
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+oauth = OAuth(Config(environ={
+    "GOOGLE_CLIENT_ID": secrets.GOOGLE_CLIENT_ID,
+    "GOOGLE_CLIENT_SECRET": secrets.GOOGLE_CLIENT_SECRET,
+    "GITHUB_CLIENT_ID": secrets.GITHUB_CLIENT_ID,
+    "GITHUB_CLIENT_SECRET": secrets.GITHUB_CLIENT_SECRET,
+}))
 
 oauth.register(
     name="google",
@@ -40,21 +39,15 @@ oauth.register(
     authorize_url="https://github.com/login/oauth/authorize",
     authorize_params=None,
     api_base_url="https://api.github.com/",
-    # `read:user` lets us call the GraphQL Contributions API on the user's
-    # behalf (their quota, not the server's). `user:email` is still required
-    # to get the verified email for account linking.
     client_kwargs={"scope": "read:user user:email"},
 )
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
 
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password):
+def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
@@ -63,57 +56,54 @@ def get_user_by_email(db: Session, email: str):
 
 
 def get_user_by_identifier(db: Session, identifier: str):
-    """Look up a user by either username or email — whichever matches.
-    Username takes priority because email-formatted usernames are unlikely."""
+    """Username or email - username wins when both match."""
     if not identifier:
         return None
     return (
         db.query(models.User)
-        .filter(
-            (models.User.username == identifier) | (models.User.email == identifier)
-        )
+        .filter((models.User.username == identifier) | (models.User.email == identifier))
         .first()
     )
 
 
 def authenticate_user(db: Session, identifier: str, password: str):
-    """Authenticate by username OR email."""
     user = get_user_by_identifier(db, identifier)
-    if not user:
-        return False
-    if not verify_password(password, user.password_hash):
+    if not user or not verify_password(password, user.password_hash):
         return False
     return user
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
+    to_encode["exp"] = expire
+    return jwt.encode(to_encode, secrets.SECRET_KEY, algorithm=constants.JWT_ALGORITHM)
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
 ):
-    credentials_exception = HTTPException(
+    creds_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
+        payload = jwt.decode(token, secrets.SECRET_KEY, algorithms=[constants.JWT_ALGORITHM])
+        user_id = payload.get("sub")
         if user_id is None:
-            raise credentials_exception
-        token_data = schemas.TokenData(user_id=user_id)
+            raise creds_error
     except JWTError:
-        raise credentials_exception
-    user = db.query(models.User).filter(models.User.id == token_data.user_id).first()
+        raise creds_error
+
+    user = db.query(models.User).filter(models.User.id == schemas.TokenData(user_id=user_id).user_id).first()
     if user is None:
-        raise credentials_exception
+        raise creds_error
     return user
+
+
+# Keep public names used elsewhere
+SECRET_KEY = secrets.SECRET_KEY
+ALGORITHM = constants.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = constants.ACCESS_TOKEN_TTL_MIN

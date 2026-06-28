@@ -1,5 +1,51 @@
 import math
 
+from app import models
+
+
+def _rank_for(score: int) -> str:
+    if score >= 80: return "Expert"
+    if score >= 60: return "Advanced"
+    if score >= 35: return "Intermediate"
+    return "Beginner"
+
+
+def recompute_portfolio(user: models.User) -> None:
+    """In-place update of user.portfolio_score / rank / activity_score from
+    REAL signals we already store on the row. Called from every state
+    change that could move the score (profile-setup completion, contribution
+    refresh, agent analysis finish) so the score never sticks at the
+    placeholder when Gemini bombs silently.
+
+    Signals (each capped so no single one dominates):
+      - manually entered skills      up to +20  (2 pts each)
+      - connected GitHub repos       up to +20  (4 pts each, cap 5)
+      - real 12mo commits (GitHub)   up to +30  (1 pt per 35 commits)
+      - agent-detected skills        up to +15
+      - resume uploaded              +5
+    Base 10, cap 100.
+
+    Caller is responsible for db.commit().
+    """
+    manual_skill_pts = min(len(user.skills or []) * 2, 20)
+    repo_pts = min(len(user.github_selected_repos or []) * 4, 20)
+    commits = int(user.contributions_total or 0)
+    commit_pts = min(commits // 35, 30)
+
+    agent_skills = set()
+    for r in (user.pending_repo_analysis or []):
+        if isinstance(r, dict):
+            for s in r.get("skills_detected") or []:
+                agent_skills.add(str(s).lower())
+    agent_skill_pts = min(len(agent_skills), 15)
+
+    resume_pts = 5 if user.resume_url else 0
+
+    total = 10 + manual_skill_pts + repo_pts + commit_pts + agent_skill_pts + resume_pts
+    user.portfolio_score = max(0, min(total, 100))
+    user.portfolio_rank = _rank_for(user.portfolio_score)
+    user.activity_score = 30 + min(commits, 700) * 70 // 700
+
 
 def compute_final_match_score(
     semantic_score: float,

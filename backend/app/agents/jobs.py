@@ -1,6 +1,6 @@
 import os
 from google.adk.agents import Agent
-from ..database import SessionLocal
+from app.database import SessionLocal
 
 
 def find_jobs_tool(user_id: int):
@@ -10,7 +10,7 @@ def find_jobs_tool(user_id: int):
     db = SessionLocal()
     try:
         # Check if user exists
-        from ..models import User
+        from app.models import User
 
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
