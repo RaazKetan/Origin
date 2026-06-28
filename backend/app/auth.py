@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from starlette.config import Config
 
 from app import models, schemas
-from app.core.config import settings
+from app.core import constants, secrets
 from app.database import get_db
 
 
@@ -20,10 +20,10 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 oauth = OAuth(Config(environ={
-    "GOOGLE_CLIENT_ID": settings.GOOGLE_CLIENT_ID,
-    "GOOGLE_CLIENT_SECRET": settings.GOOGLE_CLIENT_SECRET,
-    "GITHUB_CLIENT_ID": settings.GITHUB_CLIENT_ID,
-    "GITHUB_CLIENT_SECRET": settings.GITHUB_CLIENT_SECRET,
+    "GOOGLE_CLIENT_ID": secrets.GOOGLE_CLIENT_ID,
+    "GOOGLE_CLIENT_SECRET": secrets.GOOGLE_CLIENT_SECRET,
+    "GITHUB_CLIENT_ID": secrets.GITHUB_CLIENT_ID,
+    "GITHUB_CLIENT_SECRET": secrets.GITHUB_CLIENT_SECRET,
 }))
 
 oauth.register(
@@ -77,7 +77,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode["exp"] = expire
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(to_encode, secrets.SECRET_KEY, algorithm=constants.JWT_ALGORITHM)
 
 
 async def get_current_user(
@@ -90,7 +90,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(token, secrets.SECRET_KEY, algorithms=[constants.JWT_ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
             raise creds_error
@@ -104,6 +104,6 @@ async def get_current_user(
 
 
 # Keep public names used elsewhere
-SECRET_KEY = settings.SECRET_KEY
-ALGORITHM = settings.JWT_ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_TTL_MIN
+SECRET_KEY = secrets.SECRET_KEY
+ALGORITHM = constants.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = constants.ACCESS_TOKEN_TTL_MIN

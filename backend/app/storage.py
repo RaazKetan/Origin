@@ -5,12 +5,12 @@ from typing import Optional
 
 import httpx
 
-from app.core.config import settings
+from app.core import constants, secrets
 
 
 def _creds() -> Optional[tuple[str, str]]:
-    if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
-        return settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY
+    if secrets.SUPABASE_URL and secrets.SUPABASE_SERVICE_KEY:
+        return secrets.SUPABASE_URL, secrets.SUPABASE_SERVICE_KEY
     return None
 
 
@@ -20,10 +20,10 @@ def _headers(key: str) -> dict:
 
 def _ensure_bucket(url: str, key: str) -> None:
     body = {
-        "id": settings.RESUME_BUCKET,
-        "name": settings.RESUME_BUCKET,
+        "id": constants.RESUME_BUCKET,
+        "name": constants.RESUME_BUCKET,
         "public": False,
-        "file_size_limit": settings.MAX_RESUME_BYTES,
+        "file_size_limit": constants.MAX_RESUME_BYTES,
         "allowed_mime_types": ["application/pdf"],
     }
     try:
@@ -39,8 +39,8 @@ def put_resume(user_id: int, filename: str, content: bytes) -> str:
     """Upload + return the storage path. Local file path in dev fallback."""
     creds = _creds()
     if not creds:
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-        path = os.path.join(settings.UPLOAD_DIR, f"{user_id}_{filename}")
+        os.makedirs(constants.UPLOAD_DIR, exist_ok=True)
+        path = os.path.join(constants.UPLOAD_DIR, f"{user_id}_{filename}")
         with open(path, "wb") as f:
             f.write(content)
         return path
@@ -50,7 +50,7 @@ def put_resume(user_id: int, filename: str, content: bytes) -> str:
     storage_path = f"users/{user_id}/{filename}"
     with httpx.Client(timeout=30) as c:
         r = c.post(
-            f"{url}/storage/v1/object/{settings.RESUME_BUCKET}/{storage_path}",
+            f"{url}/storage/v1/object/{constants.RESUME_BUCKET}/{storage_path}",
             headers={**_headers(key), "Content-Type": "application/pdf", "x-upsert": "true"},
             content=content,
         )
@@ -65,10 +65,10 @@ def signed_url(storage_path: str, expires_in: int = None) -> Optional[str]:
     if not creds or os.path.isabs(storage_path):
         return None
     url, key = creds
-    ttl = expires_in or settings.RESUME_SIGNED_URL_TTL_SECS
+    ttl = expires_in or constants.RESUME_SIGNED_URL_TTL_SECS
     with httpx.Client(timeout=10) as c:
         r = c.post(
-            f"{url}/storage/v1/object/sign/{settings.RESUME_BUCKET}/{storage_path}",
+            f"{url}/storage/v1/object/sign/{constants.RESUME_BUCKET}/{storage_path}",
             headers=_headers(key),
             json={"expiresIn": ttl},
         )

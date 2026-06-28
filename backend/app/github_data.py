@@ -4,10 +4,8 @@ from typing import Optional
 
 import httpx
 
-from app.core.config import settings
+from app.core import constants, secrets
 
-
-GRAPHQL_URL = "https://api.github.com/graphql"
 
 _QUERY = """
 query($login: String!) {
@@ -29,14 +27,14 @@ def fetch_contribution_grid(username: str, user_token: Optional[str] = None) -> 
     Prefers the user's own OAuth token (their 5k/hr quota); falls back to
     the server PAT only when no user token is available.
     """
-    token = (user_token or "").strip() or settings.GITHUB_TOKEN
+    token = (user_token or "").strip() or secrets.GITHUB_TOKEN
     if not token or not username:
         return None
 
     try:
         with httpx.Client(timeout=12) as client:
             resp = client.post(
-                GRAPHQL_URL,
+                constants.GITHUB_GRAPHQL_URL,
                 headers={
                     "Authorization": f"bearer {token}",
                     "Accept": "application/vnd.github+json",
@@ -63,7 +61,7 @@ def fetch_contribution_grid(username: str, user_token: Optional[str] = None) -> 
         for w in cal.get("weeks", [])
         for d in w.get("contributionDays", [])
     ]
-    size = settings.CONTRIBUTION_GRID_SIZE
+    size = constants.CONTRIBUTION_GRID_SIZE
     if len(grid) > size:
         grid = grid[-size:]
     while len(grid) < size:

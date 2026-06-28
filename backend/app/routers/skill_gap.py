@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import models, auth
-from app.core.config import settings
+from app.core import constants, secrets
 from app.database import get_db
 from app.limiter import limiter
 from app.llm import generate
@@ -49,7 +49,7 @@ def analyze_interview_with_ai(
     Use Gemini AI to analyze interview transcript and generate skill gap analysis
     """
     try:
-        if not settings.GEMINI_API_KEY:
+        if not secrets.GEMINI_API_KEY:
             raise Exception("No API key found")
 
         prompt = f"""
@@ -143,7 +143,7 @@ IMPORTANT:
 - Output ONLY valid JSON, no additional text
 """
 
-        text = generate(model=settings.GEMINI_PRO_MODEL, contents=prompt).strip()
+        text = generate(model=constants.GEMINI_PRO_MODEL, contents=prompt).strip()
 
         # Clean JSON markers
         if text.startswith("```json"):

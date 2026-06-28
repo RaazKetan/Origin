@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.orm import Session
 
 from app import schemas, models, auth
-from app.core.config import settings
+from app.core import constants
 from app.database import get_db
 from app.limiter import limiter
 from app.resume_parser import parse_resume
@@ -15,7 +15,7 @@ from app.utils import embed_text
 router = APIRouter(prefix="/profile-setup", tags=["Profile Setup"])
 
 # Uploads go to Vercel Blob in production (set BLOB_READ_WRITE_TOKEN). For
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(constants.UPLOAD_DIR, exist_ok=True)
 
 
 @router.get("/check-username")
@@ -53,15 +53,15 @@ async def upload_resume(
         if len(file_content) == 0:
             raise HTTPException(status_code=400, detail="File is empty")
 
-        if len(file_content) > settings.MAX_RESUME_BYTES:
+        if len(file_content) > constants.MAX_RESUME_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Max size is {settings.MAX_RESUME_BYTES // (1024 * 1024)} MB.",
+                detail=f"File too large. Max size is {constants.MAX_RESUME_BYTES // (1024 * 1024)} MB.",
             )
 
         # Magic-byte check: real PDFs start with "%PDF-". Stops renamed
         # executables / arbitrary uploads from reaching the parser.
-        if not file_content.startswith(settings.PDF_MAGIC_BYTES):
+        if not file_content.startswith(constants.PDF_MAGIC_BYTES):
             raise HTTPException(
                 status_code=400, detail="File is not a valid PDF document"
             )

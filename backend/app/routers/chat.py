@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app import schemas, models, auth
-from app.core.config import settings
+from app.core import constants
 from app.database import get_db
 from app.limiter import limiter
 
@@ -50,10 +50,10 @@ def send_message(
 ):
     if not msg.content or not msg.content.strip():
         raise HTTPException(status_code=400, detail="Message content is required")
-    if len(msg.content) > settings.MAX_CHAT_MESSAGE_CHARS:
+    if len(msg.content) > constants.MAX_CHAT_MESSAGE_CHARS:
         raise HTTPException(
             status_code=400,
-            detail=f"Message too long. Max {settings.MAX_CHAT_MESSAGE_CHARS} characters.",
+            detail=f"Message too long. Max {constants.MAX_CHAT_MESSAGE_CHARS} characters.",
         )
 
     project = (
