@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 
-from .core.config import settings
+from app.core.config import settings
 
 
 def _creds() -> Optional[tuple[str, str]]:

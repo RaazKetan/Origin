@@ -3,10 +3,10 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from .. import schemas, auth, models
-from ..database import get_db
+from app import schemas, auth, models
+from app.database import get_db
 import secrets
-from ..limiter import limiter
+from app.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -87,7 +87,7 @@ def forgot_password(
     Always returns the same generic message so attackers can't enumerate
     accounts. The actual email send is best-effort (logged to stdout if
     RESEND_API_KEY isn't configured)."""
-    from .. import email_send
+    from app import email_send
 
     identifier = body.identifier
     generic = {"ok": True, "message": "If an account exists for that identifier, a reset link is on its way."}

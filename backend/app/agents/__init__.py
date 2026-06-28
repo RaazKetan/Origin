@@ -1,1 +1,1 @@
-from .github import create_github_agent
+from app.agents.github import create_github_agent

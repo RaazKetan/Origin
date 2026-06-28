@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import models, auth
-from ..core.config import settings
-from ..database import get_db
-from ..limiter import limiter
-from ..llm import generate
+from app import models, auth
+from app.core.config import settings
+from app.database import get_db
+from app.limiter import limiter
+from app.llm import generate
 
 router = APIRouter(
     prefix="/skill-gap",

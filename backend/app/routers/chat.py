@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import schemas, models, auth
-from ..core.config import settings
-from ..database import get_db
-from ..limiter import limiter
+from app import schemas, models, auth
+from app.core.config import settings
+from app.database import get_db
+from app.limiter import limiter
 
 router = APIRouter(prefix="/chat", tags=["Chat"], dependencies=[Depends(auth.get_current_user)])
 

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from .database import SessionLocal
-from . import models, auth
+from app.database import SessionLocal
+from app import models, auth
 from app.utils import embed_text
 
 

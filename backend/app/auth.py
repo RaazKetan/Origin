@@ -11,9 +11,9 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from starlette.config import Config
 
-from . import models, schemas
-from .core.config import settings
-from .database import get_db
+from app import models, schemas
+from app.core.config import settings
+from app.database import get_db
 
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")

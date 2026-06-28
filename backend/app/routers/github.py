@@ -10,10 +10,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import requests
 
-from .. import auth, models
-from ..database import get_db
-from ..github_data import fetch_contribution_grid
-from ..limiter import limiter
+from app import auth, models
+from app.database import get_db
+from app.github_data import fetch_contribution_grid
+from app.limiter import limiter
 
 router = APIRouter(
     prefix="/github",

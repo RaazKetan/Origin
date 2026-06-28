@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 # Import ADK components for the legacy/existing repo analysis functions
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
-from .agents.github import create_github_agent
-from .llm import generate
+from app.agents.github import create_github_agent
+from app.llm import generate
 
 load_dotenv()
 

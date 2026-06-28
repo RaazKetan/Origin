@@ -4,7 +4,7 @@ from typing import Optional
 
 import httpx
 
-from .core.config import settings
+from app.core.config import settings
 
 
 GRAPHQL_URL = "https://api.github.com/graphql"

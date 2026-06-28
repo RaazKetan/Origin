@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
-from .. import auth
+from app import auth
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 
-from ..database import get_db
-from ..models import User, Job, JobMatch, Application
-from ..schemas import (
+from app.database import get_db
+from app.models import User, Job, JobMatch, Application
+from app.schemas import (
     JobCreate,
     JobResponse,
     ApplicationCreate,
@@ -14,11 +14,11 @@ from ..schemas import (
     ApplicationDetailResponse,
     ConnectionResponse,
 )
-from ..auth import get_current_user
-from ..utils import embed_text
-from ..background_jobs import trigger_job_matching
-from ..scoring import compute_visibility_score
-from ..limiter import limiter
+from app.auth import get_current_user
+from app.utils import embed_text
+from app.background_jobs import trigger_job_matching
+from app.scoring import compute_visibility_score
+from app.limiter import limiter
 
 router = APIRouter(
     prefix="/jobs",
@@ -155,7 +155,7 @@ async def get_job_feed(
 
     # Trigger exposure update
     # We need a new session for background task
-    from ..database import SessionLocal
+    from app.database import SessionLocal
 
     def bg_update_wrapper(ids):
         session = SessionLocal()

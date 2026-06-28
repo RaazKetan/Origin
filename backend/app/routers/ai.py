@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel, Field
 from typing import List
-from .. import auth
-from ..gemini_agent import analyze_commit, analyze_repo, refine_pitch
-from ..limiter import limiter
+from app import auth
+from app.gemini_agent import analyze_commit, analyze_repo, refine_pitch
+from app.limiter import limiter
 
 router = APIRouter(
     prefix="/ai", tags=["AI"], dependencies=[Depends(auth.get_current_user)]

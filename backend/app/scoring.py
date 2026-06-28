@@ -1,6 +1,6 @@
 import math
 
-from . import models
+from app import models
 
 
 def _rank_for(score: int) -> str:

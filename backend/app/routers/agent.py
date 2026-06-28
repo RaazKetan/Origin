@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional
-from ..agents.orchestrator import create_orchestrator_agent
-from .. import models, auth
-from ..limiter import limiter
+from app.agents.orchestrator import create_orchestrator_agent
+from app import models, auth
+from app.limiter import limiter
 
 # Depending on ADK version, we might need a runner or session management here.
 # For simplicity, we'll instantiate and run the agent synchronously or via simple async wrapper if possible.

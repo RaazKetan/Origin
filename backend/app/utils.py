@@ -1,6 +1,6 @@
 """Embedding wrapper. Returns None instead of raising so callers can no-op."""
 
-from .llm import embed
+from app.llm import embed
 
 
 def embed_text(text: str, task_type: str = "RETRIEVAL_DOCUMENT"):
