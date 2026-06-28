@@ -13,6 +13,7 @@ import requests
 from app import auth, models
 from app.database import get_db
 from app.services.github_api import fetch_contribution_grid
+from app.services.scoring import recompute_portfolio
 from app.limiter import limiter
 
 router = APIRouter(
@@ -147,6 +148,8 @@ def refresh_my_contributions(
     current_user.contribution_grid = data["grid"]
     current_user.contributions_total = data["total"]
     current_user.contribution_fetched_at = datetime.now(timezone.utc)
+    # Real commit count changed -> rescore.
+    recompute_portfolio(current_user)
     db.add(current_user)
     db.commit()
     return data

@@ -38,92 +38,60 @@ def _mock_external_calls(monkeypatch):
     For tests we return small, well-shaped placeholders so router logic can
     be exercised without an API key or network.
     """
-    from app import utils
-    from app import gemini_agent
-    from app import resume_parser
-    from app.routers import requirements as requirements_router
-    from app.routers import talent as talent_router
+    import importlib
+
+    def patch_everywhere(symbol, fake, modules):
+        """Patch a symbol in its source module and every module that imported
+        it by name (routers bind `from app.services.x import fn` at import)."""
+        for mod_name in modules:
+            try:
+                mod = importlib.import_module(mod_name)
+            except ImportError:
+                continue
+            if hasattr(mod, symbol):
+                monkeypatch.setattr(mod, symbol, fake)
 
     fake_vector = [0.1] * 768
 
     def fake_embed(text, task_type="retrieval_document"):
         return list(fake_vector)
 
-    monkeypatch.setattr(utils, "embed_text", fake_embed)
-    # The routers import embed_text by name (`from ..utils import embed_text`),
-    # so patching the original is not enough — patch every importer too.
-    for mod_name in (
-        "app.routers.profile_setup",
-        "app.routers.profile",
-        "app.routers.users",
-        "app.routers.matching",
-        "app.routers.requirements",
-        "app.routers.talent",
-        "app.routers.jobs",
-        "app.routers.analysis_status",
-        "app.background_jobs",
-    ):
-        import importlib
-        try:
-            mod = importlib.import_module(mod_name)
-            if hasattr(mod, "embed_text"):
-                monkeypatch.setattr(mod, "embed_text", fake_embed)
-        except ImportError:
-            pass
+    patch_everywhere("embed_text", fake_embed, [
+        "app.services.embeddings",
+        "app.routers.profile_setup", "app.routers.profile", "app.routers.users",
+        "app.routers.matching", "app.routers.requirements", "app.routers.talent",
+        "app.routers.jobs", "app.routers.analysis_status", "app.background_jobs",
+        "app.agents.search", "app.seed_data",
+    ])
 
-    # refine_pitch / analyze_repo / analyze_user_repos / analyze_user_repository
-    monkeypatch.setattr(
-        gemini_agent,
-        "refine_pitch",
+    patch_everywhere("refine_pitch",
         lambda text: {"refined_pitch": text, "core_skills": ["python"]},
-    )
-    monkeypatch.setattr(
-        gemini_agent,
-        "analyze_repo",
+        ["app.services.pitch", "app.routers.ai", "app.routers.requirements"])
+
+    patch_everywhere("analyze_repo",
         lambda readme, files: {"summary": "ok", "skills": []},
-    )
-    monkeypatch.setattr(
-        gemini_agent,
-        "analyze_user_repos",
-        lambda username, repos: {
-            "embedding_summary": "test summary",
-            "core_skills": ["python", "react"],
-        },
-    )
+        ["app.services.repo_analysis", "app.routers.ai"])
+
+    patch_everywhere("analyze_user_repos",
+        lambda username, repos: {"embedding_summary": "test summary", "core_skills": ["python", "react"]},
+        ["app.services.repo_analysis", "app.routers.profile"])
 
     async def fake_analyze_user_repository(repo_url):
-        return {
-            "name": "fake-repo",
-            "url": repo_url,
-            "languages": ["Python"],
-            "skills_detected": ["FastAPI"],
-            "commits_count": 5,
-        }
+        return {"name": "fake-repo", "url": repo_url, "languages": ["Python"],
+                "skills_detected": ["FastAPI"], "commits_count": 5}
 
-    monkeypatch.setattr(
-        gemini_agent, "analyze_user_repository", fake_analyze_user_repository
-    )
+    patch_everywhere("analyze_user_repository", fake_analyze_user_repository,
+        ["app.services.repo_analysis", "app.routers.analyze_repo", "app.background_jobs"])
 
-    # The background_jobs module imports analyze_user_repository inside the
-    # function body via `from .gemini_agent import analyze_user_repository`,
-    # so the monkeypatch on gemini_agent already covers it.
-
-    # Resume parser: skip Gemini call entirely.
     async def fake_parse_resume(file_content, filename):
         return {
-            "github_profile_url": "",
-            "awards": [],
-            "skills": ["Python"],
-            "college_name": "Test U",
-            "college_gpa": "4.0",
-            "college_years": "2020-2024",
-            "certifications": [],
+            "github_profile_url": "", "awards": [], "skills": ["Python"],
+            "college_name": "Test U", "college_gpa": "4.0",
+            "college_years": "2020-2024", "certifications": [],
         }
 
-    monkeypatch.setattr(resume_parser, "parse_resume", fake_parse_resume)
-    # profile_setup imports parse_resume by name
-    from app.routers import profile_setup
-    monkeypatch.setattr(profile_setup, "parse_resume", fake_parse_resume)
+    patch_everywhere("parse_resume", fake_parse_resume,
+        ["app.services.resume", "app.routers.profile_setup"])
 
 
 @pytest.fixture(autouse=True)

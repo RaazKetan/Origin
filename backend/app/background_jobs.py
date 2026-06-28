@@ -14,7 +14,7 @@ import threading
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import User, Job, JobMatch
-from app.services.scoring import compute_final_match_score
+from app.services.scoring import compute_final_match_score, recompute_portfolio
 from app.services.matching import cosine_similarity
 from app.services.embeddings import embed_text
 
@@ -151,53 +151,24 @@ async def process_repository_analysis(job_id: str):
         job_queue.update_job_status(job_id, JobStatus.COMPLETED, results)
         print(f"[Background] Job {job_id} completed with {len(results)} results")
 
-        # Calculate new portfolio score and activity score based on analysis
         db: Session = SessionLocal()
         try:
             user = db.query(User).filter(User.id == job.user_id).first()
             if user:
-                total_skills = set()
-                total_commits = 0
-
-                for res in results:
-                    total_commits += int(res.get("commits_count") or 0)
-                    skills = res.get("skills_detected") or []
-                    for s in skills:
-                        total_skills.add(s)
-
-                # Simple scoring algorithm
-                skill_bonus = min(len(total_skills) * 2, 40)
-                commit_bonus = min(total_commits // 10, 40)
-
-                new_portfolio_score = 20 + skill_bonus + commit_bonus
-                user.portfolio_score = min(new_portfolio_score, 100)
-
-                if user.portfolio_score >= 80:
-                    user.portfolio_rank = "Advanced"
-                elif user.portfolio_score >= 50:
-                    user.portfolio_rank = "Intermediate"
-                else:
-                    user.portfolio_rank = "Beginner"
-
-                # Activity Score
-                new_activity_score = 30 + (min(total_commits, 100) / 100 * 70)
-                user.activity_score = min(int(new_activity_score), 100)
-
-                # Update embedding
-                user.top_languages = list(total_skills)[:10]
-                vec_text = f"{user.name} {user.bio} {' '.join(user.skills or [])} {' '.join(user.top_languages or [])}"
-                user.user_vector = embed_text(vec_text)
-
-                # Persist the raw analysis on the user row so /repo-reviews
-                # and /pending-skills both see it without needing the in-memory
-                # job queue (which doesn't survive across processes/cold starts).
+                # Persist the raw analysis so /repo-reviews and /pending-skills
+                # see it without the in-memory queue (gone across cold starts).
                 user.pending_repo_analysis = results
                 user.analysis_notification = True
 
-                db.commit()
-                print(
-                    f"[Background] Updated User {user.id} Profile Scores: Portfolio={user.portfolio_score}, Activity={user.activity_score}"
+                agent_skills = {s for r in results for s in (r.get("skills_detected") or [])}
+                user.top_languages = list(agent_skills)[:10]
+                user.user_vector = embed_text(
+                    f"{user.name} {user.bio} {' '.join(user.skills or [])} {' '.join(user.top_languages or [])}"
                 )
+
+                recompute_portfolio(user)
+                db.commit()
+                print(f"[Background] User {user.id} scored: portfolio={user.portfolio_score}")
         except Exception as e:
             print(f"[Background] Error updating user scores: {e}")
             db.rollback()

@@ -115,27 +115,17 @@ def test_skill_gap_rejects_short_transcript(client, headers):
 
 def test_analyze_commit_is_public_no_auth_required(client, monkeypatch):
     """Landing-page demo endpoint must be reachable without a token."""
-    from app import gemini_agent
-    monkeypatch.setattr(
-        gemini_agent,
-        "analyze_commit",
-        lambda code: {
-            "technicalSkills": ["Python"],
-            "softSkills": [],
-            "improvementAreas": [],
-            "suggestedCourses": [],
-            "complexityScore": 50,
-        },
-    )
-    # Also patch the symbol imported into the router module
-    from app.routers import ai as ai_router
-    monkeypatch.setattr(ai_router, "analyze_commit", lambda code: {
+    fake = lambda code: {
         "technicalSkills": ["Python"],
         "softSkills": [],
         "improvementAreas": [],
         "suggestedCourses": [],
         "complexityScore": 50,
-    })
+    }
+    from app.services import commit_analysis
+    from app.routers import ai as ai_router
+    monkeypatch.setattr(commit_analysis, "analyze_commit", fake)
+    monkeypatch.setattr(ai_router, "analyze_commit", fake)
     r = client.post(
         "/api/ai/analyze_commit",
         json={"code": "def f():\n    return 1 + 1\n" * 3},
