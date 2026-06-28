@@ -3,6 +3,7 @@ import {
   Compass, MessageSquare, Briefcase, FileText, User as UserIcon,
   Activity, Bookmark, Search, Menu, LogOut, GitBranch,
 } from 'lucide-react';
+import { initials as initialsOf } from '../lib/format';
 // Theme toggle now mounted globally in App.jsx (fixed top-right on every page).
 
 const OriginMark = ({ size = 17 }) => (
@@ -13,8 +14,6 @@ const OriginMark = ({ size = 17 }) => (
   </svg>
 );
 
-const initialsOf = (name = '') =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('') || 'U';
 
 const NAV_PRIMARY = [
   { id: 'discover',     label: 'Discover',        icon: Compass },

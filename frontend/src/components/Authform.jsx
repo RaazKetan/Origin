@@ -1,6 +1,6 @@
 import React, { useState } from "react";
+import { API_BASE } from '../lib/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export const AuthForm = ({ view, setView, onLogin, onRegister }) => {
   const [loginData, setLoginData] = useState({ email: "", password: "" });

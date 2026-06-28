@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Plus, MessageSquare, MapPin, Loader2, Sparkles } from 'lucide-react';
+import { API_BASE } from '../lib/api';
+import { initials } from '../lib/format';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const initials = (s = '') => s.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || 'C';
 
 const SUGGESTED_PROMPTS = [
   'Senior Rust engineer, distributed systems, remote EU',

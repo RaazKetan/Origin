@@ -18,8 +18,8 @@ import { RepoReviews } from './components/RepoReviews';
 import { AnimatedThemeToggler } from './components/magicui/animated-theme-toggler';
 import { OAuthSetup } from './components/OAuthSetup';
 import { ResetPassword } from './components/ResetPassword';
+import { API_BASE } from './lib/api';
 // GlobalAnalysisPopup retired — analysis runs inline during complete-profile.
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);

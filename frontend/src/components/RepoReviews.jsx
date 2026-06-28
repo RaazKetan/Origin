@@ -1,19 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { GitBranch, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import { API_BASE } from '../lib/api';
+import { langColor } from '../lib/format';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
-// Match the design's language palette.
-const langColor = (lang) => {
-  const k = String(lang || '').toLowerCase();
-  if (/(rust|java)/.test(k))                        return 'oklch(0.82 0.15 78)';
-  if (/(type ?script|javascript|tsx|jsx)/.test(k))  return 'oklch(0.78 0.11 235)';
-  if (/(python|django|flask)/.test(k))              return 'oklch(0.72 0.16 144)';
-  if (/(go|golang)/.test(k))                        return 'oklch(0.72 0.16 144)';
-  if (/(c\+\+|cpp|c#|csharp)/.test(k))              return 'oklch(0.78 0.11 235)';
-  if (/(ruby)/.test(k))                             return 'oklch(0.7 0.18 25)';
-  return 'oklch(0.48 0.01 250)';
-};
 
 // One repo card with the agent's review.
 function ReviewCard({ r }) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, Star, GitFork, X as XIcon } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const MAX_SELECTED_REPOS = 5;
 
 // `-o-` logo from the design — centered ring + line passing through both sides.
