@@ -8,8 +8,11 @@ ACCESS_TOKEN_TTL_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 SETUP_TOKEN_TTL_MIN = 15
 
 # --- Gemini ---
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+# gemini-2.5-* became paid/existing-users-only (404 for new free keys).
+# gemini-flash-latest is the current free workhorse (auto-tracks the latest
+# flash release). Override via env if you have billing for pro tiers.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-flash-latest")
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMS = 3072
 
