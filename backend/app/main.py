@@ -27,10 +27,16 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.limiter import limiter
 
 
-# Skip create_all when running on serverless against a pooled Postgres; the
-# Alembic migration is the source of truth there. Keep it for local SQLite.
+# Create tables on boot for local/dev. On serverless against Supabase's
+# transaction pooler, DDL is unsupported and this hangs/errors — set
+# SKIP_DB_CREATE_ALL there (tables already exist via migration). Either way,
+# never let a boot-time DB blip crash the whole app: wrap and continue so the
+# app still serves and recovers once the DB is reachable.
 if not os.getenv("SKIP_DB_CREATE_ALL"):
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[startup] create_all skipped: {type(e).__name__}: {e}")
 app = FastAPI(title="Origin API")
 
 app.state.limiter = limiter
