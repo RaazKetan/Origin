@@ -24,6 +24,10 @@ import { API_BASE } from './lib/api';
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [view, setView] = useState("login");
+  // Gate the first paint while we validate an existing token, so a logged-in
+  // user doesn't see a flash of the login page on refresh. Only blocks when a
+  // token actually exists (logged-out users go straight to login).
+  const [booting, setBooting] = useState(() => !!localStorage.getItem("token"));
   const [inspectedUser, setInspectedUser] = useState(null);
   const [ownerUser, setOwnerUser] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -299,6 +303,7 @@ export function App() {
   
   useEffect(() => {
     (async () => {
+     try {
       // Check for OAuth tokens in URL first
       const params = new URLSearchParams(window.location.search);
       const token = params.get("token");
@@ -358,6 +363,9 @@ export function App() {
       } else {
         setView("login");
       }
+     } finally {
+      setBooting(false);
+     }
     })();
   }, []);
 
@@ -441,6 +449,16 @@ export function App() {
       />
     </div>
   );
+
+  // While validating an existing token on first load, show a minimal splash
+  // instead of flashing the login page (password-reset deep links bypass this).
+  if (booting && !resetPasswordToken) {
+    return (
+      <div className="min-h-screen bg-origin-bg grid place-items-center">
+        <span className="w-6 h-6 border-2 border-origin-line-2 border-t-origin-acc rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Password-reset deep link — handled before anything else so the user
   // doesn't have to log in to use the link from their email.
