@@ -8,10 +8,13 @@ ACCESS_TOKEN_TTL_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 SETUP_TOKEN_TTL_MIN = 15
 
 # --- Gemini ---
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
-EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIMS = 3072
+# Model ids are env-driven so they can be swapped without a code deploy (they
+# get deprecated: gemini-2.5-* became paid/existing-users-only). The defaults
+# below are the current free-tier working set; override in .env / Vercel env.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-flash-latest")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "3072"))
 
 # --- GitHub ---
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"

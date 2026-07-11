@@ -1,12 +1,13 @@
-import numpy as np
-from typing import List, Dict
+import math
+from typing import List
+
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
-    a_np = np.array(a, dtype=float)
-    b_np = np.array(b, dtype=float)
-    if a_np.size == 0 or b_np.size == 0:
+    if not a or not b or len(a) != len(b):
         return 0.0
-    denom = (np.linalg.norm(a_np) * np.linalg.norm(b_np))
-    if denom == 0:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
         return 0.0
-    return float(np.dot(a_np, b_np) / denom)
+    return dot / (na * nb)
