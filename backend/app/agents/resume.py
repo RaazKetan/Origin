@@ -1,5 +1,5 @@
-import os
 from google.adk.agents import Agent
+from app.core import constants
 # For this simplified version, let's assume it can parse text or a mock "parse my resume" command
 # that triggers looking up the latest uploaded resume.
 
@@ -19,7 +19,7 @@ def parse_resume_tool(user_id: int):
 
 def create_resume_agent():
     return Agent(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        model=constants.GEMINI_MODEL,
         name="resume_agent",
         instruction="You are a resume expert. You extract structured data from resumes.",
         tools=[parse_resume_tool],  # We can refine this tool later

@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from app.agents.search import search_projects_tool
 from app.agents.resume import parse_resume_tool
 from app.agents.jobs import find_jobs_tool
+from app.core import constants
 # We'll need to expose the GitHub capabilities too.
 # Assuming github.py has tools defined or we can wrap them.
 # For now, we'll focus on the requested 3 (+ github).
@@ -26,7 +27,7 @@ def create_orchestrator_agent(user_id: int):
     )
 
     return Agent(
-        model=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+        model=constants.GEMINI_PRO_MODEL,
         name="orchestrator",
         instruction="""
         You are the main intelligent assistant for the Conekt platform.
