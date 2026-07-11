@@ -1,6 +1,6 @@
-import os
 from google.adk.agents import Agent
 from app.database import SessionLocal
+from app.core import constants
 
 
 def find_jobs_tool(user_id: int):
@@ -35,7 +35,7 @@ def find_jobs_tool(user_id: int):
 
 def create_job_agent():
     return Agent(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        model=constants.GEMINI_MODEL,
         name="job_agent",
         instruction="You are a career counselor. You help users find jobs that match their skills.",
         tools=[find_jobs_tool],

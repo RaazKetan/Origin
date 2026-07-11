@@ -1,4 +1,3 @@
-import os
 from google.adk.agents import Agent
 from app.services.embeddings import embed_text
 
@@ -7,6 +6,7 @@ from app.services.embeddings import embed_text
 # Ideally, this should use the CRUD methods or similar.
 from app.database import SessionLocal
 from sqlalchemy import text
+from app.core import constants
 
 
 def search_projects_tool(query: str):
@@ -45,7 +45,7 @@ def search_projects_tool(query: str):
 
 def create_search_agent():
     return Agent(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        model=constants.GEMINI_MODEL,
         name="search_agent",
         instruction="You are a search specialist. Your goal is to find projects relevant to the user's query.",
         tools=[search_projects_tool],

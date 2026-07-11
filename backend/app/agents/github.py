@@ -1,5 +1,6 @@
 import os
 from google.adk.agents import Agent
+from app.core import constants
 
 try:
     from google.adk.tools.mcp_tool import McpToolset
@@ -29,14 +30,14 @@ def create_github_agent():
 
     if not _MCP_AVAILABLE:
         return Agent(
-            model=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+            model=constants.GEMINI_PRO_MODEL,
             name="github_agent",
             instruction="Help users get information from GitHub. You can analyze repositories, search code, and manage issues.",
             tools=[],
         )
 
     return Agent(
-        model=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+        model=constants.GEMINI_PRO_MODEL,
         name="github_agent",
         instruction="Help users get information from GitHub. You can analyze repositories, search code, and manage issues.",
         tools=[
