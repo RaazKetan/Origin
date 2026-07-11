@@ -431,7 +431,7 @@ export function App() {
   // toggle they see. On the dashboard, AppShell's topbar toggle still appears,
   // but this fixed widget is above it. ponytail: one source, every page.
   const themeToggle = (
-    <div className="fixed top-4 right-4 z-50">
+    <div className="fixed top-4 right-4 z-[100]">
       <AnimatedThemeToggler
         theme={isDarkMode ? 'dark' : 'light'}
         onThemeChange={() => toggleTheme()}
@@ -508,6 +508,8 @@ export function App() {
   }[view] || null;
 
   return (
+    <>
+    {themeToggle}
     <AppShell
       currentView={view}
       onNavigate={(newView) => {
@@ -643,6 +645,7 @@ export function App() {
       </div>
 
     </AppShell>
+    </>
   );
 }
 
