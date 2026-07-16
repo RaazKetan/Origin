@@ -273,10 +273,29 @@ def run_pipeline(db, user, max_stage1: int = 2) -> dict:
         if not exists:
             db.add(models.ExternalContribution(user_id=user.id, **pr))
 
-    # Rank for Stage 1: non-fork, most owned work first
+    # Rank for Stage 1: non-fork, most owned work first. On a RE-run, repos
+    # pushed since their last analysis jump the queue — new work gets judged
+    # before old work gets re-judged (the coaching loop's "new > patched").
+    last_analyzed = {
+        r.repo_name: r.analyzed_at
+        for r in db.query(models.Repo).filter_by(user_id=user.id).all()
+    }
+
+    def _is_fresh(c):
+        prev = last_analyzed.get(f"{username}/{c['name']}")
+        pushed = c["github_details"].get("updated_at") or ""
+        if not prev:
+            return True  # never analyzed = new work
+        try:
+            return datetime.fromisoformat(pushed.replace("Z", "+00:00")) > prev.replace(
+                tzinfo=prev.tzinfo or timezone.utc
+            )
+        except Exception:
+            return False
+
     ranked = sorted(
         (c for c in candidates if not c["github_details"]["fork"]),
-        key=lambda c: (c["author_commit_count"], c["github_details"]["stars"]),
+        key=lambda c: (_is_fresh(c), c["author_commit_count"], c["github_details"]["stars"]),
         reverse=True,
     )
 

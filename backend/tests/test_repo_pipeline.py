@@ -64,3 +64,9 @@ def test_fit_complexity_from_demonstrated_tier():
     low, _ = calculate_fit_score(u, project, best_repo_tier=1)
     high, _ = calculate_fit_score(u, project, best_repo_tier=7)
     assert high > low
+
+
+def test_score_history_endpoint(client, auth_user):
+    r = client.get("/api/github/score-history", headers=auth_user["headers"])
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
