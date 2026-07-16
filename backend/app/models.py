@@ -59,6 +59,9 @@ class User(Base):
     activity_score = Column(Integer)
     top_languages = json_column()
     top_frameworks = json_column()
+    # Claims ∩ detected repo tech. Only these move merit; raw claims render
+    # on the profile but score nothing.
+    verified_skills = json_column()
     # 53 weeks × 7 days of integer commit counts from GitHub's Contributions
     # API. Stored as a flat 371-element list (chronological, oldest first).
     # Refreshed on profile-setup completion.

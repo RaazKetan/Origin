@@ -171,5 +171,8 @@ def analyze_my_repos(
     result = run_pipeline(db, current_user)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    db.flush()  # Repo rows visible to the rescore below
+    recompute_portfolio(current_user, db=db)
     db.commit()
+    result["portfolio_score"] = current_user.portfolio_score
     return result
