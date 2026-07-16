@@ -162,8 +162,6 @@ def analyze_tree(members: list) -> dict:
             has_ci = True
         if _MANIFEST.search(path):
             manifest = True
-        if _LOCKFILE.search(path):
-            lockfile = True
         is_test = bool(_TEST_HINT.search(path))
         if is_test:
             has_tests = True
