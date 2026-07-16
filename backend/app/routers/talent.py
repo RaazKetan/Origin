@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from app.core import secrets
 from app import models, auth
 from app.database import get_db
 from app.services.embeddings import embed_text
@@ -135,7 +136,7 @@ async def seed_candidates(
     Seed database with dummy candidate data. Admin-only.
     Requires X-Admin-Secret header matching the ADMIN_SECRET env var.
     """
-    expected_secret = os.getenv("ADMIN_SECRET")
+    expected_secret = secrets.ADMIN_SECRET or None
     if not expected_secret or not x_admin_secret or x_admin_secret != expected_secret:
         raise HTTPException(status_code=403, detail="Admin access required")
     try:

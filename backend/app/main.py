@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import os
 from dotenv import load_dotenv
+from app.core import constants
 from app.database import Base, engine
 from app.routers import (
     users,
@@ -50,14 +51,9 @@ if not SECRET_KEY:
 
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-# CORS middleware for frontend.
-# CORS_ORIGINS is a comma-separated list. If unset (local dev), allow the
-# default Vite dev server origin.
-_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
-allow_origins = [o.strip() for o in _origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    allow_origins=constants.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
+from app.core import constants
 from app.database import Base, is_postgres
 
 
@@ -69,7 +70,7 @@ class User(Base):
     # instead of hammering the server-side GITHUB_TOKEN. Plaintext for now —
     # add at-rest encryption when we have time. Null for email/Google signups.
     github_access_token = Column(String)
-    user_vector = vector_column(3072)
+    user_vector = vector_column(constants.EMBEDDING_DIMS)
 
     # Profile completion and onboarding fields
     profile_completed = Column(Boolean, default=False, index=True)
@@ -142,7 +143,7 @@ class Project(Base):
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    project_vector = vector_column(3072)
+    project_vector = vector_column(constants.EMBEDDING_DIMS)
 
     # Denormalized fields for performance
     match_count = Column(Integer, default=0)
@@ -246,7 +247,7 @@ class Candidate(Base):
     certifications = json_column()
     education = json_column()
     summary = Column(Text)
-    candidate_vector = vector_column(3072)
+    candidate_vector = vector_column(constants.EMBEDDING_DIMS)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -309,7 +310,7 @@ class Job(Base):
     description = Column(Text)
     requirements = Column(Text)  # Detailed requirements
     skills = json_column()  # List of required skills
-    job_vector = vector_column(3072)
+    job_vector = vector_column(constants.EMBEDDING_DIMS)
     location = Column(String)
     salary_range = Column(String)
     status = Column(String, default="active", index=True)  # active, closed, draft

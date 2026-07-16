@@ -5,7 +5,6 @@ Simple in-memory job queue for processing GitHub repository analysis.
 Can be upgraded to Celery/Redis for production use.
 """
 
-import asyncio
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -90,23 +89,6 @@ class JobQueue:
         with self._lock:
             if job_id in self.jobs:
                 self.jobs[job_id].errors.append(error)
-
-    def cleanup_old_jobs(self, max_age_hours: int = 24):
-        """Remove jobs older than max_age_hours"""
-        with self._lock:
-            now = datetime.now()
-            to_remove = []
-            for job_id, job in self.jobs.items():
-                if job.completed_at:
-                    age = (now - job.completed_at).total_seconds() / 3600
-                    if age > max_age_hours:
-                        to_remove.append(job_id)
-
-            for job_id in to_remove:
-                job = self.jobs[job_id]
-                del self.jobs[job_id]
-                if job.user_id in self.user_jobs:
-                    del self.user_jobs[job.user_id]
 
 
 # Global job queue instance
@@ -292,78 +274,9 @@ async def process_match_job_with_users(job_id: int):
         db.close()
 
 
-async def process_match_user_with_jobs(user_id: int):
-    """
-    Match a specific user against all active jobs.
-    """
-    print(f"[Matching] Starting match for User ID {user_id}")
-    db: Session = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            print(f"[Matching] User {user_id} not found.")
-            return
-
-        jobs = db.query(Job).filter(Job.status == "active").all()
-        print(f"[Matching] Found {len(jobs)} active jobs to match against.")
-
-        user_vector = user.user_vector
-        # If user has no vector, semantic score is 0
-
-        for job in jobs:
-            # Semantic Score
-            if not user_vector or not job.job_vector:
-                semantic_score = 0.0
-            else:
-                semantic_score = cosine_similarity(job.job_vector, user_vector) * 100.0
-
-            # Skill Overlap
-            skill_score = calculate_skill_overlap(job.skills or [], user.skills or [])
-
-            # Real Work Score
-            real_work = float(user.activity_score or 0)
-
-            # Readiness
-            readiness = float(user.portfolio_score or 0)
-
-            final_score = compute_final_match_score(
-                semantic_score, skill_score, real_work, readiness
-            )
-
-            # Upsert JobMatch
-            match_record = (
-                db.query(JobMatch)
-                .filter(JobMatch.job_id == job.id, JobMatch.user_id == user.id)
-                .first()
-            )
-
-            if not match_record:
-                match_record = JobMatch(job_id=job.id, user_id=user.id)
-                db.add(match_record)
-
-            match_record.semantic_score = semantic_score
-            match_record.skill_overlap_score = skill_score
-            match_record.real_work_score = real_work
-            match_record.readiness_score = readiness
-            match_record.final_match_score = final_score
-            match_record.is_active = True
-
-        db.commit()
-        print(f"[Matching] Completed matching for User {user_id}")
-
-    except Exception as e:
-        print(f"[Matching] Error matching user {user_id}: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-
 async def trigger_job_matching(job_id: int):
     """Run job matching inline. On Vercel serverless, fire-and-forget tasks
     don't survive past the response, so we await the work."""
     await process_match_job_with_users(job_id)
 
 
-async def trigger_user_matching(user_id: int):
-    """Run user matching inline. See note on trigger_job_matching."""
-    await process_match_user_with_jobs(user_id)

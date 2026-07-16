@@ -3,6 +3,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from app.core import constants
 from app import schemas, auth, models
 from app.database import get_db
 import secrets
@@ -270,7 +271,7 @@ async def auth_callback(request: Request, provider: str, db: Session = Depends(g
             if github_oauth_token:
                 setup_payload["gh_token"] = github_oauth_token
             setup_token = auth.create_access_token(
-                data=setup_payload, expires_delta=timedelta(minutes=15)
+                data=setup_payload, expires_delta=timedelta(minutes=constants.SETUP_TOKEN_TTL_MIN)
             )
             return RedirectResponse(
                 f"{FRONTEND_BASE_URL}/oauth-callback?setup_token={setup_token}"
