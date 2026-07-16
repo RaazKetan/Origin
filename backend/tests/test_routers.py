@@ -44,9 +44,8 @@ import pytest
         ("POST",   "/api/analyze-repo/user-repo"),
         ("POST",   "/api/talent/search"),
         ("POST",   "/api/talent/seed"),
-        ("POST",   "/api/skill-gap/analyze"),
-        ("GET",    "/api/skill-gap/candidate/1"),
-        ("GET",    "/api/skill-gap/analysis/1"),
+        ("POST",   "/api/skill-gap/repo-feedback"),
+        ("GET",    "/api/skill-gap/my-repos"),
         ("POST",   "/api/jobs/"),
         ("GET",    "/api/jobs/feed"),
         ("POST",   "/api/jobs/1/apply"),
@@ -100,17 +99,13 @@ def test_talent_search_rejects_overlong_query(client, headers):
     assert r.status_code == 422
 
 
-def test_skill_gap_rejects_short_transcript(client, headers):
+def test_repo_feedback_404_without_analysis(client, headers):
     r = client.post(
-        "/api/skill-gap/analyze",
+        "/api/skill-gap/repo-feedback",
+        json={"repo_id": 999999, "target_role": "Backend Engineer"},
         headers=headers,
-        json={
-            "candidate_id": 1,
-            "interview_transcript": "tiny",
-            "target_role": "Engineer",
-        },
     )
-    assert r.status_code == 422
+    assert r.status_code == 404
 
 
 def test_analyze_commit_is_public_no_auth_required(client, monkeypatch):

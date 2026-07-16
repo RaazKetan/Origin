@@ -74,15 +74,50 @@ def test_score_never_exceeds_100():
     assert u.portfolio_score == 100
 
 
-def test_snapshot_written_when_db_passed():
-    class FakeDB:
-        added = []
-        def add(self, obj): self.added.append(obj)
-    u = _user(); u.id = 42
-    db = FakeDB()
-    _scoring().recompute_portfolio(u, db=db)
-    assert len(db.added) == 1
-    snap = db.added[0]
-    assert snap.user_id == 42
-    assert snap.raw_merit == u.portfolio_score
-    assert snap.component_breakdown["base"] == 10
+def test_snapshot_written_when_db_passed(client, auth_user):
+    from app.database import SessionLocal
+    from app import models
+    db = SessionLocal()
+    try:
+        u = db.query(models.User).filter_by(id=auth_user["user"]["id"]).first()
+        before = db.query(models.ScoreSnapshot).filter_by(user_id=u.id).count()
+        _scoring().recompute_portfolio(u, db=db)
+        db.commit()
+        snaps = db.query(models.ScoreSnapshot).filter_by(user_id=u.id).all()
+        assert len(snaps) == before + 1
+        assert snaps[-1].raw_merit == u.portfolio_score
+        assert isinstance(snaps[-1].component_breakdown, dict)
+    finally:
+        db.close()
+
+
+def test_gate_mode_ceiling_and_gate():
+    from types import SimpleNamespace as NS
+    sc = _scoring()
+    mk = lambda **kw: NS(**{**dict(is_fork=False, tutorial_similarity=0,
+        authorship_ratio=100, cadence_score=100, quality_score=None,
+        difficulty_tier=None), **kw})
+    # one excellent repo beats five mediocre: ceiling, not mean
+    excellent = mk(quality_score=90, difficulty_tier=7)
+    mediocre = [mk(quality_score=40, difficulty_tier=2) for _ in range(5)]
+    u = NS(top_languages=["py"], college_gpa=None, contribution_grid=[],
+           skills=[], pending_repo_analysis=None)
+    one = sc.compute_merit(u, [excellent], external_prs=0)
+    five = sc.compute_merit(u, mediocre, external_prs=0)
+    assert one["raw_merit"] > five["raw_merit"]
+
+    # forked tutorial collapses the gate no matter how polished
+    faked = mk(quality_score=95, difficulty_tier=8, is_fork=True, tutorial_similarity=90)
+    gated = sc.compute_merit(u, [faked], external_prs=0)
+    assert gated["gate"] < 0.05
+    assert gated["github"] < 2
+
+
+def test_verified_skills_intersection():
+    from types import SimpleNamespace as NS
+    sc = _scoring()
+    u = NS(skills=["Python", "React", "Blockchain"],
+           pending_repo_analysis=[{"skills_detected": ["python"], "languages": ["JavaScript"], "frameworks": ["React"]}],
+           top_languages=["Python"])
+    v = sc.verified_skills(u)
+    assert "Python" in v and "React" in v and "Blockchain" not in v
