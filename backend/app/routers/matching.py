@@ -10,60 +10,64 @@ router = APIRouter(
 )
 
 
-def calculate_match_score(
-    user: models.User, project: models.Project
+def calculate_fit_score(
+    user: models.User, project: models.Project, best_repo_tier: int = None
 ) -> tuple[float, str]:
-    """
-    Calculate match score between user and project based on skills, languages, and frameworks.
-    Returns (score, match_strength) where:
-    - score: 0.0 to 1.0
-    - match_strength: "strong" (>0.7), "likely" (0.4-0.7), "weak" (<0.4)
+    """FIT only: does the stack match. Merit (how strong the engineer is)
+    lives in portfolio_score — never blended into this number, so a
+    recruiter reads "strong engineer, wrong stack" as two facts.
+
+    Skill overlap uses verified_skills (claims moved nothing on their own).
+    Complexity readiness compares the user's best-repo difficulty tier to
+    the project's complexity — demonstrated work, not self-reported skill
+    counts (which were cron-farmable).
     """
     score = 0.0
     weights = {"skills": 0.4, "languages": 0.3, "frameworks": 0.2, "complexity": 0.1}
 
-    # Skills match
-    user_skills = set(user.skills or [])
+    user_skills = set(user.verified_skills or [])
     project_skills = set(project.skills or [])
     if user_skills and project_skills:
-        skills_overlap = len(user_skills.intersection(project_skills))
-        skills_score = min(1.0, skills_overlap / max(len(project_skills), 1))
-        score += skills_score * weights["skills"]
+        overlap = len(user_skills.intersection(project_skills))
+        score += min(1.0, overlap / max(len(project_skills), 1)) * weights["skills"]
 
-    # Languages match
     user_languages = set(user.top_languages or [])
     project_languages = set(project.languages or [])
     if user_languages and project_languages:
-        lang_overlap = len(user_languages.intersection(project_languages))
-        lang_score = min(1.0, lang_overlap / max(len(project_languages), 1))
-        score += lang_score * weights["languages"]
+        overlap = len(user_languages.intersection(project_languages))
+        score += min(1.0, overlap / max(len(project_languages), 1)) * weights["languages"]
 
-    # Frameworks match
     user_frameworks = set(user.top_frameworks or [])
     project_frameworks = set(project.frameworks or [])
     if user_frameworks and project_frameworks:
-        framework_overlap = len(user_frameworks.intersection(project_frameworks))
-        framework_score = min(1.0, framework_overlap / max(len(project_frameworks), 1))
-        score += framework_score * weights["frameworks"]
+        overlap = len(user_frameworks.intersection(project_frameworks))
+        score += min(1.0, overlap / max(len(project_frameworks), 1)) * weights["frameworks"]
 
-    # Complexity bonus (if user has many skills, they can handle complex projects)
-    user_skill_count = len(user.skills or [])
-    if project.complexity == "advanced" and user_skill_count >= 5:
+    # Complexity readiness from demonstrated work (best repo tier 1-8).
+    tier = best_repo_tier or 0
+    need = {"advanced": 5, "intermediate": 3, "beginner": 1}.get(project.complexity or "", 3)
+    if tier >= need:
         score += weights["complexity"]
-    elif project.complexity == "intermediate" and user_skill_count >= 3:
-        score += weights["complexity"] * 0.7
-    elif project.complexity == "beginner":
+    elif tier and tier >= need - 2:
         score += weights["complexity"] * 0.5
 
-    # Determine match strength
-    if score >= 0.7:
-        match_strength = "strong"
-    elif score >= 0.4:
-        match_strength = "likely"
-    else:
-        match_strength = "weak"
+    strength = "strong" if score >= 0.7 else "likely" if score >= 0.4 else "weak"
+    return score, strength
 
-    return score, match_strength
+
+def best_repo_tier_for(db, user_id: int) -> int:
+    row = (
+        db.query(models.Repo.difficulty_tier)
+        .filter(models.Repo.user_id == user_id, models.Repo.difficulty_tier != None)
+        .order_by(models.Repo.difficulty_tier.desc())
+        .first()
+    )
+    return row[0] if row else 0
+
+
+# Back-compat alias for existing callers; same fit semantics.
+def calculate_match_score(user, project):
+    return calculate_fit_score(user, project)
 
 
 @router.get("/discover", response_model=schemas.ProjectResponse)

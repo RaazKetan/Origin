@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -36,7 +38,8 @@ class CandidateResponse(BaseModel):
     certifications: List[str]
     education: List[dict]
     summary: str
-    match_score: float
+    match_score: float  # percentile 0-100 within this result set, not raw cosine
+    is_exploration: bool = False
 
     class Config:
         from_attributes = True
@@ -108,11 +111,27 @@ async def search_candidates(
                         f"Error calculating similarity for candidate {candidate.id}: {e}"
                     )
 
-        # Sort by match score descending
+        # Sort by raw cosine, then present PERCENTILE within the result set —
+        # raw cosine dressed up as a percentage overstated certainty.
+        # ponytail: python loop + in-set percentile; move to pgvector
+        # ORDER BY <=> and pool-wide calibration when candidate count hurts.
         results.sort(key=lambda x: x.match_score, reverse=True)
+        n = len(results)
+        for i, r in enumerate(results):
+            r.match_score = round(100 * (n - i) / n) if n else 0
 
-        print(f"Returning {len(results)} matching candidates")
-        return results[:20]  # Return top 20 matches
+        slate = results[:20]
+        # Exploration quota (~7%): swap the tail slot for a below-cutoff
+        # candidate, tagged. Fixes the bandit problem — the model never
+        # learns it's wrong about people it always ranks low.
+        pool_below = results[20:]
+        if pool_below and len(slate) >= 10 and random.random() < 0.07 * len(slate):
+            pick = random.choice(pool_below)
+            pick.is_exploration = True
+            slate[-1] = pick
+
+        print(f"Returning {len(slate)} candidates ({sum(r.is_exploration for r in slate)} exploration)")
+        return slate
 
     except HTTPException:
         raise

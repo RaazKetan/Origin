@@ -43,3 +43,24 @@ def test_tutorial_similarity_heuristic():
     assert pl.tutorial_similarity("react-todo-tutorial", "", 0) >= 50
     assert pl.tutorial_similarity("raft-db", "distributed KV store", 0) == 0
     assert pl.tutorial_similarity("myapp", "built for this udemy course", 0) >= 30
+
+
+def test_fit_uses_verified_skills_only():
+    from types import SimpleNamespace as NS
+    from app.routers.matching import calculate_fit_score
+    project = NS(skills=["python", "react"], languages=[], frameworks=[], complexity="beginner")
+    claimer = NS(verified_skills=[], skills=["python", "react"], top_languages=[], top_frameworks=[])
+    verified = NS(verified_skills=["python", "react"], skills=["python", "react"], top_languages=[], top_frameworks=[])
+    s_claim, _ = calculate_fit_score(claimer, project)
+    s_ver, _ = calculate_fit_score(verified, project)
+    assert s_ver > s_claim  # raw claims move nothing
+
+
+def test_fit_complexity_from_demonstrated_tier():
+    from types import SimpleNamespace as NS
+    from app.routers.matching import calculate_fit_score
+    project = NS(skills=[], languages=[], frameworks=[], complexity="advanced")
+    u = NS(verified_skills=[], skills=[], top_languages=[], top_frameworks=[])
+    low, _ = calculate_fit_score(u, project, best_repo_tier=1)
+    high, _ = calculate_fit_score(u, project, best_repo_tier=7)
+    assert high > low

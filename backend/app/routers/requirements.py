@@ -117,7 +117,16 @@ def analyze_requirements(
         recommendations.sort(key=lambda x: x.match_score, reverse=True)
 
         print(f"Returning {len(recommendations)} recommendations")
-        return recommendations[:10]  # Return top 10 matches
+        surfaced = recommendations[:10]
+        # Label stream: these users were shown to a recruiter-side query.
+        for rec in surfaced:
+            db.add(models.OutcomeEvent(
+                candidate_id=rec.id,
+                event_type="surfaced",
+                context={"query": body.requirements_text[:200]},
+            ))
+        db.commit()
+        return surfaced
 
     except Exception as e:
         print(f"Requirements analysis failed: {e}")
