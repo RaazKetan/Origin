@@ -12,7 +12,23 @@ import requests
 from app.core import constants, secrets
 from app.llm import generate
 from app.services.json_parse import parse_json
-from app.services.prompts import SYSTEM_PROMPT
+from app.services.prompts import SYSTEM_PROMPT, GITHUB_PROJECT_SELECTION_PROMPT
+
+
+def select_top_projects(repos: list, top_n: int = 7) -> list:
+    """LLM-pick the candidate's most impressive repos (from fetch_candidate_repos).
+    Falls back to top-N by stars if the model call fails."""
+    if not repos:
+        return []
+    try:
+        prompt = GITHUB_PROJECT_SELECTION_PROMPT.format(
+            top_n=top_n, projects_data=json.dumps(repos, ensure_ascii=False, default=str)
+        )
+        picked = parse_json(generate(constants.GEMINI_MODEL, prompt))
+        return picked[:top_n] if isinstance(picked, list) else repos[:top_n]
+    except Exception as e:
+        print(f"[repo_analysis] select_top_projects fell back: {type(e).__name__}: {e}")
+        return repos[:top_n]
 
 
 def analyze_repo(readme_text: str, files: list) -> dict:
