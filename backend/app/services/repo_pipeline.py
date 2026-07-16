@@ -18,6 +18,7 @@ ponytail decisions (each has a named upgrade path):
 """
 
 import io
+import random
 import re
 import tarfile
 from datetime import datetime, timezone
@@ -299,6 +300,27 @@ def run_pipeline(db, user, max_stage1: int = 2) -> dict:
         reverse=True,
     )
 
+    # Audit sampler: ~2% of runs also Stage-1 a repo the ranking would have
+    # skipped, logged as an event — measures what the funnel wrongly kills.
+    audit_idx = None
+    if len(ranked) > max_stage1 and random.random() < 0.02:
+        audit_idx = random.randrange(max_stage1, len(ranked))
+        db.add(models.OutcomeEvent(
+            candidate_id=user.id,
+            event_type="audit_sample",
+            context={"repo": f"{username}/{ranked[audit_idx]['name']}"},
+        ))
+
+    # Anti-gaming telemetry: cram spike = most of the year's commits landed
+    # in the last 4 weeks. Logged, never auto-punished — humans decide.
+    grid = user.contribution_grid or []
+    if grid and sum(grid) >= 30 and sum(grid[-28:]) / sum(grid) > 0.6:
+        db.add(models.OutcomeEvent(
+            candidate_id=user.id,
+            event_type="anomaly_cram_spike",
+            context={"recent_share": round(sum(grid[-28:]) / sum(grid), 2)},
+        ))
+
     analyzed = []
     for i, cand in enumerate(ranked):
         owner_repo = f"{username}/{cand['name']}"
@@ -312,7 +334,7 @@ def run_pipeline(db, user, max_stage1: int = 2) -> dict:
         row.authorship_ratio = round(100 * cand["author_commit_count"] / total) if total else 0
         row.analyzed_at = datetime.now(timezone.utc)
 
-        if i < max_stage1:  # Stage 1 only for the best repos
+        if i < max_stage1 or i == audit_idx:  # best repos + the audit pick
             row.cadence_score = fetch_repo_cadence(owner_repo, token)
             tree = download_and_analyze(owner_repo, token)
             if tree:
