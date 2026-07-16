@@ -140,7 +140,7 @@ async def complete_profile(
                 continue
             seen.add(url)
             github_repos_to_analyze.append(url)
-            if len(github_repos_to_analyze) >= 5:
+            if len(github_repos_to_analyze) >= constants.MAX_SELECTED_REPOS:
                 break
     elif data.github_profile_url:
         try:
@@ -225,7 +225,7 @@ async def complete_profile(
             now = datetime.now(timezone.utc)
             stale = (
                 not current_user.contribution_fetched_at
-                or current_user.contribution_fetched_at < (now - timedelta(hours=6))
+                or current_user.contribution_fetched_at < (now - timedelta(hours=constants.CONTRIBUTION_CACHE_HOURS))
             )
             if stale:
                 contrib = fetch_contribution_grid(

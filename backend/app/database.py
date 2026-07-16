@@ -57,7 +57,7 @@ if is_postgres:
     # may fail (extension creation requires a direct connection) — that's OK,
     # the extension is enabled at project creation time anyway.
     @event.listens_for(engine, "connect")
-    def receive_connect(dbapi_conn, connection_record):
+    def receive_connect(dbapi_conn, _):
         try:
             with dbapi_conn.cursor() as cursor:
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")

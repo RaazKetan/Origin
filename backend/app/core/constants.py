@@ -37,4 +37,4 @@ MAX_CHAT_MESSAGE_CHARS = 2000
 # --- App URLs ---
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000/api")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",") if o.strip()]

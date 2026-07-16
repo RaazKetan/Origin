@@ -4,7 +4,6 @@ from sqlalchemy import and_
 from app import schemas, models, auth
 from app.database import get_db
 from app.limiter import limiter
-import random
 
 router = APIRouter(
     prefix="/matching", tags=["Matching"], dependencies=[Depends(auth.get_current_user)]

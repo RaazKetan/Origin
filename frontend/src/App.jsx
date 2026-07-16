@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sun, Moon } from 'lucide-react';
 import { AuthForm } from './components/Authform';
-import { Header } from './components/Header';
-import { SideNav, BottomNav } from './components/Navigation';
 import { AppShell } from './components/AppShell';
 import { ChatView } from './components/ChatView';
 import { UserDetails } from './components/UserDetails';
