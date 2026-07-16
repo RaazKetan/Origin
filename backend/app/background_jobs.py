@@ -148,7 +148,7 @@ async def process_repository_analysis(job_id: str):
                     f"{user.name} {user.bio} {' '.join(user.skills or [])} {' '.join(user.top_languages or [])}"
                 )
 
-                recompute_portfolio(user)
+                recompute_portfolio(user, db=db)
                 db.commit()
                 print(f"[Background] User {user.id} scored: portfolio={user.portfolio_score}")
         except Exception as e:

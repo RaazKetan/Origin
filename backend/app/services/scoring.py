@@ -10,22 +10,13 @@ def _rank_for(score: int) -> str:
     return "Beginner"
 
 
-def recompute_portfolio(user: models.User) -> None:
+def recompute_portfolio(user: models.User, db=None) -> None:
     """In-place update of user.portfolio_score / rank / activity_score from
-    REAL signals we already store on the row. Called from every state
-    change that could move the score (profile-setup completion, contribution
-    refresh, agent analysis finish) so the score never sticks at the
-    placeholder when Gemini bombs silently.
+    real signals on the row. Called from every state change that can move
+    the score. Caller is responsible for db.commit().
 
-    Signals (each capped so no single one dominates):
-      - manually entered skills      up to +20  (2 pts each)
-      - connected GitHub repos       up to +20  (4 pts each, cap 5)
-      - real 12mo commits (GitHub)   up to +30  (1 pt per 35 commits)
-      - agent-detected skills        up to +15
-      - resume uploaded              +5
-    Base 10, cap 100.
-
-    Caller is responsible for db.commit().
+    Pass `db` to also append a ScoreSnapshot (history for improvement curves
+    + future ranker training). Committed with the caller's commit.
     """
     manual_skill_pts = min(len(user.skills or []) * 2, 20)
     repo_pts = min(len(user.github_selected_repos or []) * 4, 20)
@@ -41,10 +32,25 @@ def recompute_portfolio(user: models.User) -> None:
 
     resume_pts = 5 if user.resume_url else 0
 
-    total = 10 + manual_skill_pts + repo_pts + commit_pts + agent_skill_pts + resume_pts
+    breakdown = {
+        "base": 10,
+        "manual_skills": manual_skill_pts,
+        "repos": repo_pts,
+        "commits": commit_pts,
+        "agent_skills": agent_skill_pts,
+        "resume": resume_pts,
+    }
+    total = sum(breakdown.values())
     user.portfolio_score = max(0, min(total, 100))
     user.portfolio_rank = _rank_for(user.portfolio_score)
     user.activity_score = 30 + min(commits, 700) * 70 // 700
+
+    if db is not None and user.id is not None:
+        db.add(models.ScoreSnapshot(
+            user_id=user.id,
+            raw_merit=user.portfolio_score,
+            component_breakdown=breakdown,
+        ))
 
 
 def compute_final_match_score(

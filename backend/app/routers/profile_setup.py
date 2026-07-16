@@ -245,7 +245,7 @@ async def complete_profile(
         # Score from real signals (skills, repos, commits, agent analysis).
         # Recomputed again when the analysis job finishes — never sticks at a
         # placeholder.
-        recompute_portfolio(current_user)
+        recompute_portfolio(current_user, db=db)
 
         db.commit()
         db.refresh(current_user)
