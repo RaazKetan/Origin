@@ -427,3 +427,54 @@ class ScoreSnapshot(Base):
     component_breakdown = json_column()
     percentile = Column(Integer)  # null until calibration ships
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Repo(Base):
+    """Per-repo mechanical analysis (Stage 0/1 of the scoring funnel)."""
+
+    __tablename__ = "repos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    repo_name = Column(String, nullable=False)  # owner/name
+    is_fork = Column(Boolean, default=False)
+    authored_loc = Column(Integer)          # source LOC after vendored strip
+    has_tests = Column(Boolean)
+    tests_assert = Column(Boolean)          # do the tests actually assert anything
+    has_ci = Column(Boolean)
+    builds = Column(Boolean)                # manifest+lockfile heuristic (see pipeline)
+    difficulty_tier = Column(Integer)       # 1-8, LLM-set
+    quality_score = Column(Integer)         # 0-100, LLM-set
+    tutorial_similarity = Column(Integer)   # 0-100; heuristic v1
+    authorship_ratio = Column(Integer)      # 0-100: author commits / total
+    cadence_score = Column(Integer)         # 0-100: incremental history vs one dump
+    import_centrality = json_column()       # reserved for Stage 2 file selection
+    analyzed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "repo_name", name="uq_user_repo"),
+    )
+
+
+class ExternalContribution(Base):
+    """Merged PRs into repos the candidate does not own (graded, not counted)."""
+
+    __tablename__ = "external_contributions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_repo = Column(String, nullable=False)  # owner/name
+    pr_url = Column(String, nullable=False)
+    merged = Column(Boolean, default=True)
+    review_rounds = Column(Integer)
+    target_repo_downloads = Column(Integer)  # null until registry lookups ship
+    diff_substance = Column(Integer)         # 0-100; null until diff grading ships
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "pr_url", name="uq_user_pr"),
+    )

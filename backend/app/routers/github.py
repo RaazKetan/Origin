@@ -153,3 +153,23 @@ def refresh_my_contributions(
     db.add(current_user)
     db.commit()
     return data
+
+
+@router.post("/analyze")
+@limiter.limit("2/minute")
+def analyze_my_repos(
+    request: Request,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Run scoring-funnel Stage 0/1 on the current user's GitHub and persist
+    Repo + ExternalContribution rows."""
+    from app.services.repo_pipeline import run_pipeline
+
+    if not current_user.github_profile_url:
+        raise HTTPException(status_code=400, detail="No GitHub profile URL on file")
+    result = run_pipeline(db, current_user)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    db.commit()
+    return result
