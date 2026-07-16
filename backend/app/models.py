@@ -395,3 +395,35 @@ class Application(Base):
         UniqueConstraint("job_id", "user_id", name="uq_job_application"),
         Index("idx_app_status", "job_id", "status"),
     )
+
+
+class OutcomeEvent(Base):
+    """Label stream for the learning loop: what happened to a candidate.
+    event_type: surfaced | slate | interviewed | passed | hired | rating_6mo."""
+
+    __tablename__ = "outcome_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    candidate_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event_type = Column(String, nullable=False, index=True)
+    context = json_column()  # job_id, recruiter query, exploration flag, etc.
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ScoreSnapshot(Base):
+    """Score history: one row per recompute. Powers improvement curves and
+    (later) the learned ranker's training features."""
+
+    __tablename__ = "score_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    raw_merit = Column(Integer)
+    gate_value = Column(Integer)  # 0-100 (gate * 100); null until gate ships
+    component_breakdown = json_column()
+    percentile = Column(Integer)  # null until calibration ships
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

@@ -72,3 +72,17 @@ def test_score_never_exceeds_100():
     )
     _scoring().recompute_portfolio(u)
     assert u.portfolio_score == 100
+
+
+def test_snapshot_written_when_db_passed():
+    class FakeDB:
+        added = []
+        def add(self, obj): self.added.append(obj)
+    u = _user(); u.id = 42
+    db = FakeDB()
+    _scoring().recompute_portfolio(u, db=db)
+    assert len(db.added) == 1
+    snap = db.added[0]
+    assert snap.user_id == 42
+    assert snap.raw_merit == u.portfolio_score
+    assert snap.component_breakdown["base"] == 10

@@ -149,7 +149,7 @@ def refresh_my_contributions(
     current_user.contributions_total = data["total"]
     current_user.contribution_fetched_at = datetime.now(timezone.utc)
     # Real commit count changed -> rescore.
-    recompute_portfolio(current_user)
+    recompute_portfolio(current_user, db=db)
     db.add(current_user)
     db.commit()
     return data
