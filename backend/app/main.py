@@ -20,6 +20,7 @@ from app.routers import (
     analysis_status,
     jobs,
     agent,
+    admin,
     github as github_router,
 )
 from slowapi import _rate_limit_exceeded_handler
@@ -88,4 +89,5 @@ api_router.include_router(skill_gap.router)
 api_router.include_router(jobs.router)
 api_router.include_router(agent.router)
 api_router.include_router(github_router.router)
+api_router.include_router(admin.router)
 app.include_router(api_router)
