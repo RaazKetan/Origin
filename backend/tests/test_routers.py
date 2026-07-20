@@ -456,3 +456,14 @@ def test_check_username_returns_taken(client, auth_user):
     )
     assert r.status_code == 200
     assert r.json()["available"] is False
+
+
+def test_admin_migrate_locked(client):
+    r = client.post("/api/admin/migrate", headers={"X-Admin-Secret": "wrong"})
+    assert r.status_code == 403
+
+
+def test_admin_migrate_runs_with_secret(client):
+    r = client.post("/api/admin/migrate", headers={"X-Admin-Secret": "test-admin-secret"})
+    assert r.status_code == 200
+    assert r.json()["create_all"] == "ok"
