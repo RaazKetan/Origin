@@ -350,11 +350,11 @@ export const ProfileSetup = ({ onComplete }) => {
           <Kicker className="mb-3.5">// Step 1 of 4 · Profile setup</Kicker>
           <h1 className="font-display font-medium text-[clamp(30px,5vw,42px)] leading-[1.05] tracking-tight">Let's build your profile.</h1>
           <p className="mt-3.5 text-base leading-relaxed text-origin-ink-3 max-w-[40ch] mx-auto text-pretty">
-            Three steps to a verified profile that proves what you can actually do — and routes you to the right collaborations.
+            Three steps to a verified profile that proves what you can actually do - and routes you to the right collaborations.
           </p>
         </div>
 
-        <div className="bg-origin-bg-soft border border-origin-line rounded-[18px] p-3 bg-[radial-gradient(130%_90%_at_50%_-10%,oklch(0.22_0.015_150_/0.4),transparent_55%)]">
+        <div className="bg-origin-bg-soft border border-origin-line rounded-[18px] p-3">
           <Item idx="01" title="Upload your résumé" desc="We'll automatically extract your skills, education, and achievements." icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><path d="M9 13h6M9 17h4" /></svg>
           } />
@@ -416,7 +416,7 @@ export const ProfileSetup = ({ onComplete }) => {
             <div className="font-display font-medium text-base tracking-tight">
               {isUploading ? 'Parsing your résumé…' : <>Drop your résumé here, or <b className="text-origin-acc font-medium">browse</b></>}
             </div>
-            <div className="text-[13px] text-origin-ink-4 mt-2">We never share your file — it's used only to build your profile.</div>
+            <div className="text-[13px] text-origin-ink-4 mt-2">We never share your file - it's used only to build your profile.</div>
             <input id="resume-upload" type="file" accept=".pdf,application/pdf" className="hidden"
                    onChange={(e) => { setSetupMethod('resume'); handleResumeUpload(e); }} />
           </label>
@@ -723,7 +723,7 @@ function CompleteView({ target, rank, skillsCount, reposCount, onContinue }) {
           <h1 className="text-center font-display font-medium text-[clamp(28px,5vw,40px)] leading-[1.05] tracking-tight">You're verified.</h1>
           <p className="mt-3 text-base leading-relaxed text-origin-ink-3 text-center max-w-[42ch] mx-auto text-pretty">Your profile is live and ready. Here's your signal score.</p>
 
-          <div className="mt-7 bg-origin-bg-soft border border-origin-line rounded-[20px] px-7 py-8 text-center relative overflow-hidden bg-[radial-gradient(130%_90%_at_50%_-10%,oklch(0.3_0.06_150/0.4),transparent_55%)]">
+          <div className="mt-7 bg-origin-bg-soft border border-origin-line rounded-[20px] px-7 py-8 text-center relative overflow-hidden">
             <div className="font-mono text-[11px] tracking-widest uppercase text-origin-ink-4">Your signal score</div>
 
             <div className="origin-score-ring w-[184px] h-[184px] mx-auto mt-5 relative grid place-items-center rounded-full" style={{ '--p': ringPct }}>
